@@ -101,6 +101,7 @@ export const moduleApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { projectId, moduleId }) => [
         { type: "Module", id: moduleId },
+        { type: "Module", id: `${projectId}_LIST` },
         { type: "Issue", id: `${projectId}_LIST` },
       ],
     }),
@@ -112,6 +113,7 @@ export const moduleApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { projectId, moduleId }) => [
         { type: "Module", id: moduleId },
+        { type: "Module", id: `${projectId}_LIST` },
         { type: "Issue", id: `${projectId}_LIST` },
       ],
     }),

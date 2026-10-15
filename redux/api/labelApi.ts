@@ -1,4 +1,5 @@
 import { baseApi } from "./baseApi"
+import { issueApi } from "./issueApi"
 import type { ProjectLabel } from "@/types/api"
 
 export interface CreateLabelRequest {
@@ -57,6 +58,10 @@ export const labelApi = baseApi.injectEndpoints({
         method: "POST",
         body: { name, color },
       }),
+      transformResponse: (response: any) => {
+        if (response && response.data) return response.data
+        return response
+      },
       invalidatesTags: (_result, _error, { projectId }) => [
         { type: "Label", id: `${projectId}_LIST` },
       ],
@@ -97,8 +102,8 @@ export const labelApi = baseApi.injectEndpoints({
         const labelObj = labelQuery?.data?.find((l) => l.id === label_id)
 
         const patchResult = dispatch(
-          baseApi.util.updateQueryData("getIssues" as any, { workspaceSlug, projectId } as any, (draft: any) => {
-            const target = draft?.find?.((i: any) => i.id === issueId)
+          issueApi.util.updateQueryData("getIssues", { workspaceSlug, projectId }, (draft) => {
+            const target = draft.find((i) => i.id === issueId)
             if (target) {
               if (!target.labels) target.labels = []
               const already = target.labels.some(
@@ -109,7 +114,7 @@ export const labelApi = baseApi.injectEndpoints({
                   issue_id: issueId,
                   label_id,
                   label: labelObj || { id: label_id, name: "...", color: "#888" },
-                })
+                } as any)
               }
             }
           })
@@ -133,8 +138,8 @@ export const labelApi = baseApi.injectEndpoints({
       }),
       async onQueryStarted({ workspaceSlug, projectId, issueId, labelId }, { dispatch, queryFulfilled }) {
         const patchResult = dispatch(
-          baseApi.util.updateQueryData("getIssues" as any, { workspaceSlug, projectId } as any, (draft: any) => {
-            const target = draft?.find?.((i: any) => i.id === issueId)
+          issueApi.util.updateQueryData("getIssues", { workspaceSlug, projectId }, (draft) => {
+            const target = draft.find((i) => i.id === issueId)
             if (target && Array.isArray(target.labels)) {
               target.labels = target.labels.filter(
                 (x: any) => (x.id || x.label_id || x.label?.id) !== labelId

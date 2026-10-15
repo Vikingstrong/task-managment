@@ -30,10 +30,26 @@ export function CycleIssuesModal({
   isOpen,
   onClose,
 }: CycleIssuesModalProps) {
-  const { data: allIssues = [], isLoading: isLoadingIssues } = useGetIssuesQuery({
-    workspaceSlug,
-    projectId,
-  })
+  // 1. Fetch issues assigned to this specific cycle directly from backend
+  const { data: cycleIssues = [], isLoading: isLoadingCycleIssues } = useGetIssuesQuery(
+    {
+      workspaceSlug,
+      projectId,
+      cycle: cycle?.id,
+    },
+    { skip: !cycle?.id || !isOpen }
+  )
+
+  // 2. Fetch all project issues to find candidates
+  const { data: allIssues = [], isLoading: isLoadingAll } = useGetIssuesQuery(
+    {
+      workspaceSlug,
+      projectId,
+    },
+    { skip: !isOpen }
+  )
+
+  const isLoadingIssues = isLoadingCycleIssues || isLoadingAll
 
   const [addIssues, { isLoading: isAdding }] = useAddCycleIssuesMutation()
   const [removeIssue, { isLoading: isRemoving }] = useRemoveCycleIssueMutation()
@@ -41,17 +57,15 @@ export function CycleIssuesModal({
   const [selectedIssueIds, setSelectedIssueIds] = React.useState<string[]>([])
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
-  // Filter issues belonging to this cycle
-  const cycleIssues = React.useMemo(() => {
-    if (!cycle) return []
-    return allIssues.filter((i: any) => i.cycle_id === cycle.id || i.cycle === cycle.id)
-  }, [allIssues, cycle])
+  // IDs of issues already in this cycle
+  const cycleIssueIds = React.useMemo(() => {
+    return new Set(cycleIssues.map((i) => i.id))
+  }, [cycleIssues])
 
   // Available issues not currently in this cycle
   const candidateIssues = React.useMemo(() => {
-    if (!cycle) return []
-    return allIssues.filter((i: any) => i.cycle_id !== cycle.id && i.cycle !== cycle.id)
-  }, [allIssues, cycle])
+    return allIssues.filter((i) => !cycleIssueIds.has(i.id))
+  }, [allIssues, cycleIssueIds])
 
   React.useEffect(() => {
     setSelectedIssueIds([])

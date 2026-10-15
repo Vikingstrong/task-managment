@@ -30,10 +30,26 @@ export function ModuleIssuesModal({
   isOpen,
   onClose,
 }: ModuleIssuesModalProps) {
-  const { data: allIssues = [], isLoading: isLoadingIssues } = useGetIssuesQuery({
-    workspaceSlug,
-    projectId,
-  })
+  // 1. Fetch issues assigned to this specific module directly from backend
+  const { data: moduleIssues = [], isLoading: isLoadingModuleIssues } = useGetIssuesQuery(
+    {
+      workspaceSlug,
+      projectId,
+      module: module?.id,
+    },
+    { skip: !module?.id || !isOpen }
+  )
+
+  // 2. Fetch all project issues to find candidates
+  const { data: allIssues = [], isLoading: isLoadingAll } = useGetIssuesQuery(
+    {
+      workspaceSlug,
+      projectId,
+    },
+    { skip: !isOpen }
+  )
+
+  const isLoadingIssues = isLoadingModuleIssues || isLoadingAll
 
   const [addIssues, { isLoading: isAdding }] = useAddModuleIssuesMutation()
   const [removeIssue, { isLoading: isRemoving }] = useRemoveModuleIssueMutation()
@@ -41,17 +57,15 @@ export function ModuleIssuesModal({
   const [selectedIssueIds, setSelectedIssueIds] = React.useState<string[]>([])
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
-  // Filter issues belonging to this module
-  const moduleIssues = React.useMemo(() => {
-    if (!module) return []
-    return allIssues.filter((i: any) => i.module_id === module.id || i.module === module.id)
-  }, [allIssues, module])
+  // IDs of issues already in this module
+  const moduleIssueIds = React.useMemo(() => {
+    return new Set(moduleIssues.map((i) => i.id))
+  }, [moduleIssues])
 
   // Available issues not currently in this module
   const candidateIssues = React.useMemo(() => {
-    if (!module) return []
-    return allIssues.filter((i: any) => i.module_id !== module.id && i.module !== module.id)
-  }, [allIssues, module])
+    return allIssues.filter((i) => !moduleIssueIds.has(i.id))
+  }, [allIssues, moduleIssueIds])
 
   React.useEffect(() => {
     setSelectedIssueIds([])

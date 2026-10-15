@@ -97,6 +97,7 @@ export const cycleApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { projectId, cycleId }) => [
         { type: "Cycle", id: cycleId },
+        { type: "Cycle", id: `${projectId}_LIST` },
         { type: "Issue", id: `${projectId}_LIST` },
       ],
     }),
@@ -108,6 +109,7 @@ export const cycleApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { projectId, cycleId }) => [
         { type: "Cycle", id: cycleId },
+        { type: "Cycle", id: `${projectId}_LIST` },
         { type: "Issue", id: `${projectId}_LIST` },
       ],
     }),

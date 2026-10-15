@@ -21,10 +21,13 @@ import { ProjectNavTabs } from "@/components/projects/ProjectNavTabs"
 import { CreateCycleModal } from "./CreateCycleModal"
 import { EditCycleModal } from "./EditCycleModal"
 import { CycleIssuesModal } from "./CycleIssuesModal"
+import { DeleteCycleModal } from "./DeleteCycleModal"
 import { useGetProjectQuery, useGetProjectMembersQuery } from "@/redux/api/projectApi"
 import { useGetCyclesQuery, useDeleteCycleMutation } from "@/redux/api/cycleApi"
+import { useGetIssuesQuery } from "@/redux/api/issueApi"
+import { useGetStatesQuery } from "@/redux/api/stateApi"
 import { cn } from "@/lib/utils"
-import type { Cycle, CycleStatus } from "@/types/api"
+import type { Cycle, CycleStatus, ProjectState } from "@/types/api"
 
 interface CyclesViewProps {
   workspaceSlug: string
@@ -49,6 +52,7 @@ export default function CyclesView({ workspaceSlug, projectId }: CyclesViewProps
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
   const [editingCycle, setEditingCycle] = React.useState<Cycle | null>(null)
   const [managingIssuesCycle, setManagingIssuesCycle] = React.useState<Cycle | null>(null)
+  const [deletingCycle, setDeletingCycle] = React.useState<Cycle | null>(null)
 
   const { data: project, isLoading: isProjectLoading } = useGetProjectQuery({
     workspaceSlug,
@@ -65,21 +69,31 @@ export default function CyclesView({ workspaceSlug, projectId }: CyclesViewProps
     projectId,
   })
 
-  const [deleteCycle] = useDeleteCycleMutation()
+  const { data: states = [] } = useGetStatesQuery({
+    workspaceSlug,
+    projectId,
+  })
+
+  const [deleteCycle, { isLoading: isDeletingCycle }] = useDeleteCycleMutation()
 
   const filteredCycles = React.useMemo(() => {
     if (statusFilter === "all") return cycles
     return cycles.filter((c) => c.status === statusFilter)
   }, [cycles, statusFilter])
 
-  const handleDelete = async (cycleId: string, name: string) => {
-    if (!confirm(`Вы действительно хотите удалить спринт "${name}"?`)) return
+  const handleDelete = (cycle: Cycle) => {
+    setDeletingCycle(cycle)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deletingCycle) return
     try {
       await deleteCycle({
         workspaceSlug,
         projectId,
-        cycleId,
+        cycleId: deletingCycle.id,
       }).unwrap()
+      setDeletingCycle(null)
     } catch {
       // Handled
     }
@@ -192,111 +206,18 @@ export default function CyclesView({ workspaceSlug, projectId }: CyclesViewProps
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredCycles.map((cycle) => {
-                  const progressPct = Math.round(cycle.progress?.completion_percentage ?? 0)
-                  const total = cycle.progress?.total ?? 0
-                  const completed = cycle.progress?.completed ?? 0
-
-                  return (
-                    <div
-                      key={cycle.id}
-                      className="group rounded-xl border border-border bg-card p-4 sm:p-5 shadow-2xs hover:border-foreground/30 transition-all flex flex-col justify-between space-y-4"
-                    >
-                      <div className="space-y-2">
-                        {/* Status & Actions Header */}
-                        <div className="flex items-center justify-between gap-2">
-                          <span
-                            className={cn(
-                              "text-[10px] font-mono px-2 py-0.5 rounded-md border",
-                              cycle.status === "active"
-                                ? "border-foreground/40 bg-foreground/5 text-foreground font-semibold"
-                                : cycle.status === "completed"
-                                  ? "border-border bg-muted/30 text-muted-foreground"
-                                  : "border-border bg-muted/20 text-muted-foreground"
-                            )}
-                          >
-                            {cycle.status === "active"
-                              ? "Активный"
-                              : cycle.status === "completed"
-                                ? "Завершен"
-                                : "Предстоящий"}
-                          </span>
-
-                          <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                            <button
-                              type="button"
-                              onClick={() => setEditingCycle(cycle)}
-                              className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                              title="Редактировать"
-                            >
-                              <Edit2 className="size-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(cycle.id, cycle.name)}
-                              className="p-1 rounded text-muted-foreground hover:text-destructive cursor-pointer"
-                              title="Удалить"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Name & Description */}
-                        <div>
-                          <h3 className="text-sm font-semibold text-foreground line-clamp-1">
-                            {cycle.name}
-                          </h3>
-                          {cycle.description && (
-                            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5 leading-relaxed">
-                              {cycle.description}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Dates */}
-                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
-                          <Calendar className="size-3" />
-                          <span>
-                            {formatCycleDate(cycle.start_date)} — {formatCycleDate(cycle.end_date)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Progress Section */}
-                      <div className="space-y-2 pt-2 border-t border-border/60">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground text-[11px]">Прогресс</span>
-                          <span className="font-mono font-medium text-foreground text-[11px]">
-                            {progressPct}% ({completed}/{total})
-                          </span>
-                        </div>
-
-                        {/* Minimalist Progress Bar */}
-                        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full bg-foreground transition-all duration-300"
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
-
-                        {/* Manage Issues Button */}
-                        <div className="pt-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setManagingIssuesCycle(cycle)}
-                            className="w-full h-8 text-xs font-medium gap-1.5 cursor-pointer"
-                          >
-                            <ListTodo className="size-3.5 text-muted-foreground" />
-                            <span>Задачи спринта ({total})</span>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+                {filteredCycles.map((cycle) => (
+                  <CycleCard
+                    key={cycle.id}
+                    cycle={cycle}
+                    workspaceSlug={workspaceSlug}
+                    projectId={projectId}
+                    states={states}
+                    onEdit={setEditingCycle}
+                    onDelete={handleDelete}
+                    onManageIssues={setManagingIssuesCycle}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -327,6 +248,158 @@ export default function CyclesView({ workspaceSlug, projectId }: CyclesViewProps
         isOpen={!!managingIssuesCycle}
         onClose={() => setManagingIssuesCycle(null)}
       />
+
+      <DeleteCycleModal
+        isOpen={!!deletingCycle}
+        onClose={() => setDeletingCycle(null)}
+        onConfirm={handleConfirmDelete}
+        cycleName={deletingCycle?.name || ""}
+        isLoading={isDeletingCycle}
+      />
+    </div>
+  )
+}
+
+interface CycleCardProps {
+  cycle: Cycle
+  workspaceSlug: string
+  projectId: string
+  states: ProjectState[]
+  onEdit: (cycle: Cycle) => void
+  onDelete: (cycle: Cycle) => void
+  onManageIssues: (cycle: Cycle) => void
+}
+
+function CycleCard({
+  cycle,
+  workspaceSlug,
+  projectId,
+  states,
+  onEdit,
+  onDelete,
+  onManageIssues,
+}: CycleCardProps) {
+  // Live query of issues associated with this sprint/cycle
+  const { data: cycleIssues = [] } = useGetIssuesQuery({
+    workspaceSlug,
+    projectId,
+    cycle: cycle.id,
+  })
+
+  // Dynamic progress calculation from actual bound tasks and their state groups
+  const total = cycleIssues.length
+  const completed = React.useMemo(() => {
+    return cycleIssues.filter((issue) => {
+      const st = states.find((s) => s.id === issue.state_id)
+      return st?.group === "completed" || !!issue.completed_at
+    }).length
+  }, [cycleIssues, states])
+
+  const active = React.useMemo(() => {
+    return cycleIssues.filter((issue) => {
+      const st = states.find((s) => s.id === issue.state_id)
+      return st ? st.group === "started" || st.group === "unstarted" || st.group === "backlog" : true
+    }).length
+  }, [cycleIssues, states])
+
+  const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0
+
+  return (
+    <div className="group rounded-xl border border-border bg-card p-4 sm:p-5 shadow-2xs hover:border-foreground/30 transition-all flex flex-col justify-between space-y-4">
+      <div className="space-y-2">
+        {/* Status & Actions Header */}
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={cn(
+              "text-[10px] font-mono px-2 py-0.5 rounded-md border",
+              cycle.status === "active"
+                ? "border-foreground/40 bg-foreground/5 text-foreground font-semibold"
+                : cycle.status === "completed"
+                  ? "border-border bg-muted/30 text-muted-foreground"
+                  : "border-border bg-muted/20 text-muted-foreground"
+            )}
+          >
+            {cycle.status === "active"
+              ? "Активный"
+              : cycle.status === "completed"
+                ? "Завершен"
+                : "Предстоящий"}
+          </span>
+
+          <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+            <button
+              type="button"
+              onClick={() => onEdit(cycle)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+              title="Редактировать"
+            >
+              <Edit2 className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(cycle)}
+              className="p-1 rounded text-muted-foreground hover:text-destructive cursor-pointer"
+              title="Удалить"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Name & Description */}
+        <div>
+          <h3 className="text-sm font-semibold text-foreground line-clamp-1">
+            {cycle.name}
+          </h3>
+          {cycle.description && (
+            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5 leading-relaxed">
+              {cycle.description}
+            </p>
+          )}
+        </div>
+
+        {/* Dates */}
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
+          <Calendar className="size-3" />
+          <span>
+            {formatCycleDate(cycle.start_date)} — {formatCycleDate(cycle.end_date)}
+          </span>
+        </div>
+      </div>
+
+      {/* Progress Section */}
+      <div className="space-y-2 pt-2 border-t border-border/60">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground text-[11px]">
+            {active > 0 ? `${active} активных` : "Прогресс"}
+          </span>
+          <span className="font-mono font-medium text-foreground text-[11px]">
+            {progressPct}% ({completed}/{total})
+          </span>
+        </div>
+
+        {/* Minimalist Progress Bar */}
+        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full bg-foreground transition-all duration-300"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+
+        {/* Manage Issues Button */}
+        <div className="pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onManageIssues(cycle)}
+            className="w-full h-8 text-xs font-medium gap-1.5 cursor-pointer"
+          >
+            <ListTodo className="size-3.5 text-muted-foreground" />
+            <span>Задачи спринта ({total})</span>
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

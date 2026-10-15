@@ -1,16 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { Check, Loader2, Plus, Tag, X } from "lucide-react"
+import { Check, Loader2, Plus, Tag, Trash2, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   useGetLabelsQuery,
   useCreateLabelMutation,
+  useDeleteLabelMutation,
   useAttachLabelToIssueMutation,
   useDetachLabelFromIssueMutation,
 } from "@/redux/api/labelApi"
+import { DeleteLabelModal } from "./DeleteLabelModal"
 import { getAuthErrorMessage } from "@/lib/auth/errorHandler"
 import type { ProjectLabel } from "@/types/api"
 
@@ -48,11 +50,13 @@ export function IssueLabels({
   const [attachLabel, { isLoading: isAttaching }] = useAttachLabelToIssueMutation()
   const [detachLabel, { isLoading: isDetaching }] = useDetachLabelFromIssueMutation()
   const [createLabel, { isLoading: isCreating }] = useCreateLabelMutation()
+  const [deleteLabel, { isLoading: isDeletingLabel }] = useDeleteLabelMutation()
 
   const [isOpen, setIsOpen] = React.useState(false)
   const [isCreatingNew, setIsCreatingNew] = React.useState(false)
   const [newLabelName, setNewLabelName] = React.useState("")
   const [newLabelColor, setNewLabelColor] = React.useState(PRESET_COLORS[0])
+  const [deletingLabel, setDeletingLabel] = React.useState<ProjectLabel | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   const [localAttached, setLocalAttached] = React.useState<any[]>(attachedLabels || [])
@@ -121,8 +125,11 @@ export function IssueLabels({
     }
   }
 
-  const handleCreateLabel = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleCreateLabel = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
     const trimmed = newLabelName.trim()
     if (!trimmed) return
     setErrorMessage(null)
@@ -132,21 +139,40 @@ export function IssueLabels({
         workspaceSlug,
         projectId,
         name: trimmed,
-        color: newLabelColor,
+        color: newLabelColor || PRESET_COLORS[0],
       }).unwrap()
 
-      setLocalAttached((prev) => [...prev, created])
+      const createdObj = (created as any)?.data || created
 
-      // Automatically attach the newly created label
-      await attachLabel({
-        workspaceSlug,
-        projectId,
-        issueId,
-        label_id: created.id,
-      }).unwrap()
+      if (createdObj?.id) {
+        setLocalAttached((prev) => [...prev, createdObj])
+
+        // Automatically attach the newly created label
+        await attachLabel({
+          workspaceSlug,
+          projectId,
+          issueId,
+          label_id: createdObj.id,
+        }).unwrap()
+      }
 
       setNewLabelName("")
       setIsCreatingNew(false)
+    } catch (err) {
+      setErrorMessage(getAuthErrorMessage(err))
+    }
+  }
+
+  const handleConfirmDeleteLabel = async () => {
+    if (!deletingLabel) return
+    setErrorMessage(null)
+    try {
+      await deleteLabel({
+        workspaceSlug,
+        projectId,
+        labelId: deletingLabel.id,
+      }).unwrap()
+      setDeletingLabel(null)
     } catch (err) {
       setErrorMessage(getAuthErrorMessage(err))
     }
@@ -219,7 +245,7 @@ export function IssueLabels({
 
           {/* New Label Creation Form */}
           {isCreatingNew && (
-            <form onSubmit={handleCreateLabel} className="space-y-2 rounded-md border border-border/80 bg-muted/20 p-2.5">
+            <div className="space-y-2 rounded-md border border-border/80 bg-muted/20 p-2.5">
               <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                 <span>Новая метка</span>
                 <button
@@ -235,6 +261,13 @@ export function IssueLabels({
                 placeholder="Название метки (например, Баг, Рефакторинг)"
                 value={newLabelName}
                 onChange={(e) => setNewLabelName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleCreateLabel(e)
+                  }
+                }}
                 disabled={isCreating}
                 required
                 className="h-8 text-xs"
@@ -264,15 +297,20 @@ export function IssueLabels({
                   Отмена
                 </Button>
                 <Button
-                  type="submit"
+                  type="button"
                   size="sm"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleCreateLabel(e)
+                  }}
                   disabled={isCreating || !newLabelName.trim()}
                   className="h-7 px-2.5 text-xs bg-foreground text-background font-medium hover:bg-foreground/90 cursor-pointer"
                 >
                   {isCreating ? <Loader2 className="size-3 animate-spin" /> : "Создать и добавить"}
                 </Button>
               </div>
-            </form>
+            </div>
           )}
 
           {/* Project Labels List */}
@@ -289,28 +327,52 @@ export function IssueLabels({
               projectLabels.map((lbl) => {
                 const isSelected = attachedIds.has(lbl.id)
                 return (
-                  <button
+                  <div
                     key={lbl.id}
-                    type="button"
-                    onClick={() => handleToggleLabel(lbl)}
-                    disabled={isAttaching || isDetaching}
-                    className="w-full flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-muted/50 text-xs transition-colors cursor-pointer text-left"
+                    className="group/item flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-muted/50 text-xs transition-colors"
                   >
-                    <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleLabel(lbl)}
+                      disabled={isAttaching || isDetaching}
+                      className="flex-1 flex items-center gap-2 cursor-pointer text-left min-w-0"
+                    >
                       <span
                         className="size-2 rounded-full shrink-0"
                         style={{ backgroundColor: lbl.color }}
                       />
-                      <span className="text-foreground">{lbl.name}</span>
+                      <span className="text-foreground truncate">{lbl.name}</span>
+                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isSelected && <Check className="size-3.5 text-foreground" />}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeletingLabel(lbl)
+                        }}
+                        className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity cursor-pointer ml-1"
+                        title="Удалить метку из проекта"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
                     </div>
-                    {isSelected && <Check className="size-3.5 text-foreground" />}
-                  </button>
+                  </div>
                 )
               })
             )}
           </div>
         </div>
       )}
+
+      <DeleteLabelModal
+        isOpen={!!deletingLabel}
+        onClose={() => setDeletingLabel(null)}
+        onConfirm={handleConfirmDeleteLabel}
+        labelName={deletingLabel?.name || ""}
+        labelColor={deletingLabel?.color}
+        isLoading={isDeletingLabel}
+      />
     </div>
   )
 }

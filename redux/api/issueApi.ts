@@ -8,6 +8,8 @@ export interface GetIssuesRequest {
   priority?: string
   assignee?: string
   search?: string
+  cycle?: string
+  module?: string
 }
 
 export interface CreateIssueRequest {
@@ -58,6 +60,8 @@ export const issueApi = baseApi.injectEndpoints({
         if (params.priority) queryParams.set("priority", params.priority)
         if (params.assignee) queryParams.set("assignee", params.assignee)
         if (params.search) queryParams.set("search", params.search)
+        if (params.cycle) queryParams.set("cycle", params.cycle)
+        if (params.module) queryParams.set("module", params.module)
         const qs = queryParams.toString()
         return `/workspaces/${workspaceSlug}/projects/${projectId}/issues/${qs ? `?${qs}` : ""}`
       },

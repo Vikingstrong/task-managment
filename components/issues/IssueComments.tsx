@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { DeleteCommentModal } from "./DeleteCommentModal"
 import {
   useGetCommentsQuery,
   useCreateCommentMutation,
@@ -73,6 +74,7 @@ export function IssueComments({
   const [replyBody, setReplyBody] = React.useState("")
   const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null)
   const [editBody, setEditBody] = React.useState("")
+  const [deletingComment, setDeletingComment] = React.useState<IssueComment | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   // Separate root comments and child replies
@@ -154,15 +156,21 @@ export function IssueComments({
     }
   }
 
-  const handleDelete = async (commentId: string) => {
+  const handleDelete = (comment: IssueComment) => {
+    setDeletingComment(comment)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deletingComment) return
     setErrorMessage(null)
     try {
       await deleteComment({
         workspaceSlug,
         projectId,
         issueId,
-        commentId,
+        commentId: deletingComment.id,
       }).unwrap()
+      setDeletingComment(null)
     } catch (err) {
       setErrorMessage(getAuthErrorMessage(err))
     }
@@ -234,7 +242,7 @@ export function IssueComments({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDelete(comment.id)}
+                  onClick={() => handleDelete(comment)}
                   disabled={isDeleting}
                   className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
                   title="Удалить"
@@ -408,6 +416,14 @@ export function IssueComments({
           rootComments.map((root) => renderComment(root, false))
         )}
       </div>
+
+      <DeleteCommentModal
+        isOpen={!!deletingComment}
+        onClose={() => setDeletingComment(null)}
+        onConfirm={handleConfirmDelete}
+        commentSnippet={deletingComment?.body}
+        isLoading={isDeleting}
+      />
     </div>
   )
 }

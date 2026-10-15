@@ -21,10 +21,13 @@ import { ProjectNavTabs } from "@/components/projects/ProjectNavTabs"
 import { CreateModuleModal } from "./CreateModuleModal"
 import { EditModuleModal } from "./EditModuleModal"
 import { ModuleIssuesModal } from "./ModuleIssuesModal"
+import { DeleteModuleModal } from "./DeleteModuleModal"
 import { useGetProjectQuery, useGetProjectMembersQuery } from "@/redux/api/projectApi"
 import { useGetModulesQuery, useDeleteModuleMutation } from "@/redux/api/moduleApi"
+import { useGetIssuesQuery } from "@/redux/api/issueApi"
+import { useGetStatesQuery } from "@/redux/api/stateApi"
 import { cn } from "@/lib/utils"
-import type { Module, ModuleStatus } from "@/types/api"
+import type { Module, ModuleStatus, ProjectState } from "@/types/api"
 
 interface ModulesViewProps {
   workspaceSlug: string
@@ -75,6 +78,7 @@ export default function ModulesView({ workspaceSlug, projectId }: ModulesViewPro
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
   const [editingModule, setEditingModule] = React.useState<Module | null>(null)
   const [managingIssuesModule, setManagingIssuesModule] = React.useState<Module | null>(null)
+  const [deletingModule, setDeletingModule] = React.useState<Module | null>(null)
 
   const { data: project, isLoading: isProjectLoading } = useGetProjectQuery({
     workspaceSlug,
@@ -91,21 +95,31 @@ export default function ModulesView({ workspaceSlug, projectId }: ModulesViewPro
     projectId,
   })
 
-  const [deleteModule] = useDeleteModuleMutation()
+  const { data: states = [] } = useGetStatesQuery({
+    workspaceSlug,
+    projectId,
+  })
+
+  const [deleteModule, { isLoading: isDeletingModule }] = useDeleteModuleMutation()
 
   const filteredModules = React.useMemo(() => {
     if (statusFilter === "all") return modules
     return modules.filter((m) => m.status === statusFilter)
   }, [modules, statusFilter])
 
-  const handleDelete = async (moduleId: string, name: string) => {
-    if (!confirm(`Вы действительно хотите удалить модуль "${name}"?`)) return
+  const handleDelete = (mod: Module) => {
+    setDeletingModule(mod)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deletingModule) return
     try {
       await deleteModule({
         workspaceSlug,
         projectId,
-        moduleId,
+        moduleId: deletingModule.id,
       }).unwrap()
+      setDeletingModule(null)
     } catch {
       // Handled
     }
@@ -221,117 +235,19 @@ export default function ModulesView({ workspaceSlug, projectId }: ModulesViewPro
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredModules.map((mod) => {
-                  const statusConf = MODULE_STATUS_CONFIG[mod.status] || {
-                    label: mod.status,
-                    badgeClass: "border-border bg-muted/20 text-muted-foreground",
-                  }
-                  const progressPct = Math.round(mod.progress?.completion_percentage ?? 0)
-                  const total = mod.progress?.total ?? 0
-                  const completed = mod.progress?.completed ?? 0
-
                   const leadMember = members.find((m) => m.user_id === mod.lead_id)
-
                   return (
-                    <div
+                    <ModuleCard
                       key={mod.id}
-                      className="group rounded-xl border border-border bg-card p-4 sm:p-5 shadow-2xs hover:border-foreground/30 transition-all flex flex-col justify-between space-y-4"
-                    >
-                      <div className="space-y-2.5">
-                        {/* Status & Actions Header */}
-                        <div className="flex items-center justify-between gap-2">
-                          <span
-                            className={cn(
-                              "text-[10px] font-mono px-2 py-0.5 rounded-md border",
-                              statusConf.badgeClass
-                            )}
-                          >
-                            {statusConf.label}
-                          </span>
-
-                          <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                            <button
-                              type="button"
-                              onClick={() => setEditingModule(mod)}
-                              className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                              title="Редактировать"
-                            >
-                              <Edit2 className="size-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(mod.id, mod.name)}
-                              className="p-1 rounded text-muted-foreground hover:text-destructive cursor-pointer"
-                              title="Удалить"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Name & Description */}
-                        <div>
-                          <h3 className="text-sm font-semibold text-foreground line-clamp-1">
-                            {mod.name}
-                          </h3>
-                          {mod.description && (
-                            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5 leading-relaxed">
-                              {mod.description}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Metadata: Lead & Dates */}
-                        <div className="space-y-1.5 pt-1 text-[11px] text-muted-foreground">
-                          {leadMember && (
-                            <div className="flex items-center gap-1.5">
-                              <UserIcon className="size-3 text-muted-foreground shrink-0" />
-                              <span className="truncate">
-                                Лид: {leadMember.user?.display_name || leadMember.user?.email}
-                              </span>
-                            </div>
-                          )}
-
-                          <div className="flex items-center gap-1.5 font-mono">
-                            <Calendar className="size-3 text-muted-foreground shrink-0" />
-                            <span>
-                              {formatModuleDate(mod.start_date)} — {formatModuleDate(mod.target_date)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Progress Section */}
-                      <div className="space-y-2 pt-2 border-t border-border/60">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground text-[11px]">Прогресс</span>
-                          <span className="font-mono font-medium text-foreground text-[11px]">
-                            {progressPct}% ({completed}/{total})
-                          </span>
-                        </div>
-
-                        {/* Minimalist Progress Bar */}
-                        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full bg-foreground transition-all duration-300"
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
-
-                        {/* Manage Issues Button */}
-                        <div className="pt-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setManagingIssuesModule(mod)}
-                            className="w-full h-8 text-xs font-medium gap-1.5 cursor-pointer"
-                          >
-                            <ListTodo className="size-3.5 text-muted-foreground" />
-                            <span>Задачи модуля ({total})</span>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                      mod={mod}
+                      workspaceSlug={workspaceSlug}
+                      projectId={projectId}
+                      leadMember={leadMember}
+                      states={states}
+                      onEdit={setEditingModule}
+                      onDelete={handleDelete}
+                      onManageIssues={setManagingIssuesModule}
+                    />
                   )
                 })}
               </div>
@@ -364,6 +280,163 @@ export default function ModulesView({ workspaceSlug, projectId }: ModulesViewPro
         isOpen={!!managingIssuesModule}
         onClose={() => setManagingIssuesModule(null)}
       />
+
+      <DeleteModuleModal
+        isOpen={!!deletingModule}
+        onClose={() => setDeletingModule(null)}
+        onConfirm={handleConfirmDelete}
+        moduleName={deletingModule?.name || ""}
+        isLoading={isDeletingModule}
+      />
+    </div>
+  )
+}
+
+interface ModuleCardProps {
+  mod: Module
+  workspaceSlug: string
+  projectId: string
+  leadMember?: any
+  states: ProjectState[]
+  onEdit: (mod: Module) => void
+  onDelete: (mod: Module) => void
+  onManageIssues: (mod: Module) => void
+}
+
+function ModuleCard({
+  mod,
+  workspaceSlug,
+  projectId,
+  leadMember,
+  states,
+  onEdit,
+  onDelete,
+  onManageIssues,
+}: ModuleCardProps) {
+  // Live query of issues associated with this module
+  const { data: moduleIssues = [] } = useGetIssuesQuery({
+    workspaceSlug,
+    projectId,
+    module: mod.id,
+  })
+
+  // Dynamic progress calculation from actual bound tasks and their state groups
+  const total = moduleIssues.length
+  const completed = React.useMemo(() => {
+    return moduleIssues.filter((issue) => {
+      const st = states.find((s) => s.id === issue.state_id)
+      return st?.group === "completed" || !!issue.completed_at
+    }).length
+  }, [moduleIssues, states])
+
+  const active = React.useMemo(() => {
+    return moduleIssues.filter((issue) => {
+      const st = states.find((s) => s.id === issue.state_id)
+      return st ? st.group === "started" || st.group === "unstarted" || st.group === "backlog" : true
+    }).length
+  }, [moduleIssues, states])
+
+  const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0
+  const statusCfg = MODULE_STATUS_CONFIG[mod.status] || MODULE_STATUS_CONFIG.backlog
+
+  return (
+    <div className="group rounded-xl border border-border bg-card p-4 sm:p-5 shadow-2xs hover:border-foreground/30 transition-all flex flex-col justify-between space-y-4">
+      <div className="space-y-2">
+        {/* Status & Actions Header */}
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={cn(
+              "text-[10px] font-mono px-2 py-0.5 rounded-md border",
+              statusCfg.badgeClass
+            )}
+          >
+            {statusCfg.label}
+          </span>
+
+          <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+            <button
+              type="button"
+              onClick={() => onEdit(mod)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+              title="Редактировать"
+            >
+              <Edit2 className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(mod)}
+              className="p-1 rounded text-muted-foreground hover:text-destructive cursor-pointer"
+              title="Удалить"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Title & Description */}
+        <div>
+          <h3 className="text-sm font-semibold text-foreground line-clamp-1">
+            {mod.name}
+          </h3>
+          {mod.description && (
+            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5 leading-relaxed">
+              {mod.description}
+            </p>
+          )}
+        </div>
+
+        {/* Lead and Dates */}
+        <div className="flex flex-col gap-1.5 pt-1 text-[11px] text-muted-foreground">
+          {leadMember && (
+            <div className="flex items-center gap-1.5 font-mono">
+              <UserIcon className="size-3" />
+              <span className="truncate">
+                {leadMember.user?.display_name || leadMember.user?.email || "Руководитель"}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 font-mono">
+            <Calendar className="size-3" />
+            <span>
+              {formatModuleDate(mod.start_date)} — {formatModuleDate(mod.target_date)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Progress Section */}
+      <div className="space-y-2 pt-2 border-t border-border/60">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground text-[11px]">
+            {active > 0 ? `${active} активных` : "Прогресс"}
+          </span>
+          <span className="font-mono font-medium text-foreground text-[11px]">
+            {progressPct}% ({completed}/{total})
+          </span>
+        </div>
+
+        {/* Minimalist Progress Bar */}
+        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full bg-foreground transition-all duration-300"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+
+        {/* Manage Issues Button */}
+        <div className="pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onManageIssues(mod)}
+            className="w-full h-8 text-xs font-medium gap-1.5 cursor-pointer"
+          >
+            <ListTodo className="size-3.5 text-muted-foreground" />
+            <span>Задачи модуля ({total})</span>
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
