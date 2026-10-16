@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Calendar, Loader2, Subtitles, Zap } from "lucide-react"
+import { Calendar, Loader2, Subtitles, X, Zap } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { useCreateIssueMutation, useGetIssuesQuery } from "@/redux/api/issueApi"
 import { useGetLabelsQuery } from "@/redux/api/labelApi"
 import { getAuthErrorMessage } from "@/lib/auth/errorHandler"
+import { formatToIsoDateTime } from "@/lib/dateUtils"
 import { MacModal } from "@/components/common/MacModal"
 import type { IssuePriority, ProjectState } from "@/types/api"
 import type { ResolvedMember } from "./assigneeUtils"
@@ -112,8 +113,8 @@ export function CreateIssueModal({
           assignee_ids: assigneeId ? [assigneeId] : [],
           label_ids: selectedLabelIds,
           parent_id: parentId || null,
-          start_date: startDate || null,
-          due_date: dueDate || null,
+          start_date: formatToIsoDateTime(startDate),
+          due_date: formatToIsoDateTime(dueDate),
           estimate_points: estimatePoints !== "" ? Number(estimatePoints) : null,
         },
       }).unwrap()
@@ -236,14 +237,28 @@ export function CreateIssueModal({
               <Calendar className="size-3 text-muted-foreground" />
               <span>Дата начала</span>
             </Label>
-            <Input
-              id="issue-start-date"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              disabled={isCreating}
-              className="h-10 text-xs sm:text-sm"
-            />
+            <div className="flex items-center gap-1.5">
+              <Input
+                id="issue-start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                disabled={isCreating}
+                className="h-10 text-xs sm:text-sm"
+              />
+              {startDate && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setStartDate("")}
+                  className="size-10 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                  title="Очистить дату начала"
+                >
+                  <X className="size-4" />
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -251,14 +266,28 @@ export function CreateIssueModal({
               <Calendar className="size-3 text-muted-foreground" />
               <span>Срок (дедлайн)</span>
             </Label>
-            <Input
-              id="issue-due-date"
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              disabled={isCreating}
-              className="h-10 text-xs sm:text-sm"
-            />
+            <div className="flex items-center gap-1.5">
+              <Input
+                id="issue-due-date"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                disabled={isCreating}
+                className="h-10 text-xs sm:text-sm"
+              />
+              {dueDate && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setDueDate("")}
+                  className="size-10 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                  title="Очистить срок"
+                >
+                  <X className="size-4" />
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-1.5">

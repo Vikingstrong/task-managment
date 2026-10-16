@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Trash2, User as UserIcon } from "lucide-react"
+import { Calendar, Trash2, User as UserIcon } from "lucide-react"
 
 import {
   DropdownMenu,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { PRIORITY_CONFIG, getStateGroupIcon } from "./kanbanConstants"
 import { resolveAssigneeDisplay, type ResolvedMember } from "./assigneeUtils"
+import { formatDisplayDate, isDateOverdue } from "@/lib/dateUtils"
 import { cn } from "@/lib/utils"
 import type { Issue, ProjectState } from "@/types/api"
 
@@ -124,6 +125,24 @@ export function TaskListRow({
         >
           {priorityInfo.label}
         </span>
+
+        {/* Due Date Badge */}
+        {issue.due_date && (
+          <span
+            className={cn(
+              "text-[10px] font-mono border px-1.5 py-0.5 rounded-sm shrink-0 flex items-center gap-1",
+              isDateOverdue(issue.due_date) &&
+                currentState.group !== "completed" &&
+                currentState.group !== "cancelled"
+                ? "border-destructive/40 bg-destructive/10 text-destructive font-semibold"
+                : "border-border/60 bg-muted/30 text-foreground"
+            )}
+            title={`Срок: ${formatDisplayDate(issue.due_date)}`}
+          >
+            <Calendar className="size-2.5 text-muted-foreground" />
+            <span>{formatDisplayDate(issue.due_date)}</span>
+          </span>
+        )}
 
         {/* Assignee */}
         <div className="w-28 flex items-center justify-start">

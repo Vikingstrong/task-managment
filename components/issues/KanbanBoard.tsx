@@ -433,6 +433,22 @@ export default function KanbanBoard({
     }
   }
 
+  // Quick update issue deadline
+  const handleUpdateDueDate = async (issueId: string, dueDate: string | null) => {
+    try {
+      await updateIssue({
+        workspaceSlug,
+        projectId,
+        issueId,
+        body: {
+          due_date: dueDate,
+        },
+      }).unwrap()
+    } catch (err: unknown) {
+      alert(getAuthErrorMessage(err))
+    }
+  }
+
   // Request delete issue (opens MacModal)
   const handleRequestDelete = (issueId: string, title: string) => {
     const targetIssue = issues.find((i) => i.id === issueId)
@@ -795,6 +811,7 @@ export default function KanbanBoard({
                           onSelect={(iss) => setSelectedIssue(iss)}
                           onMoveState={handleMoveIssueState}
                           onDelete={handleRequestDelete}
+                          onUpdateDueDate={handleUpdateDueDate}
                           onDragStart={(id) => setDraggingIssueId(id)}
                           onDragEnd={() => {
                             setDraggingIssueId(null)

@@ -11,6 +11,7 @@ import {
   Paperclip,
   Subtitles,
   Trash2,
+  X,
   Zap,
 } from "lucide-react"
 
@@ -25,6 +26,7 @@ import {
   useRemoveIssueAssigneeMutation,
 } from "@/redux/api/issueApi"
 import { getAuthErrorMessage } from "@/lib/auth/errorHandler"
+import { formatToIsoDateTime, toDateInputValue } from "@/lib/dateUtils"
 import { MacModal } from "@/components/common/MacModal"
 import { IssueLabels } from "./IssueLabels"
 import { IssueComments } from "./IssueComments"
@@ -50,11 +52,6 @@ export interface IssueDetailModalProps {
 
 type TabKey = "properties" | "comments" | "attachments" | "activity" | "relations"
 
-function toDateInputString(isoString?: string | null): string {
-  if (!isoString) return ""
-  return isoString.split("T")[0]
-}
-
 export function IssueDetailModal({
   workspaceSlug,
   projectId,
@@ -73,8 +70,8 @@ export function IssueDetailModal({
   const [stateId, setStateId] = React.useState(issue?.state_id || "")
   const [priority, setPriority] = React.useState<IssuePriority>(issue?.priority || "none")
   const [assigneeId, setAssigneeId] = React.useState<string>(extractAssigneeId(issue))
-  const [startDate, setStartDate] = React.useState<string>(toDateInputString(issue?.start_date))
-  const [dueDate, setDueDate] = React.useState<string>(toDateInputString(issue?.due_date))
+  const [startDate, setStartDate] = React.useState<string>(toDateInputValue(issue?.start_date))
+  const [dueDate, setDueDate] = React.useState<string>(toDateInputValue(issue?.due_date))
   const [estimatePoints, setEstimatePoints] = React.useState<string>(
     issue?.estimate_points != null ? String(issue?.estimate_points) : ""
   )
@@ -106,8 +103,8 @@ export function IssueDetailModal({
       setStateId(activeIssue.state_id)
       setPriority(activeIssue.priority)
       setAssigneeId(extractAssigneeId(activeIssue))
-      setStartDate(toDateInputString(activeIssue.start_date))
-      setDueDate(toDateInputString(activeIssue.due_date))
+      setStartDate(toDateInputValue(activeIssue.start_date))
+      setDueDate(toDateInputValue(activeIssue.due_date))
       setEstimatePoints(
         activeIssue.estimate_points != null ? String(activeIssue.estimate_points) : ""
       )
@@ -115,7 +112,12 @@ export function IssueDetailModal({
       setErrorMessage(null)
       setSaveSuccess(false)
     }
-  }, [activeIssue?.id])
+  }, [
+    activeIssue?.id,
+    activeIssue?.updated_at,
+    activeIssue?.due_date,
+    activeIssue?.start_date,
+  ])
 
   if (!activeIssue) return null
 
@@ -139,7 +141,7 @@ export function IssueDetailModal({
     }
 
     try {
-      // 1. Update issue core and extended parameters
+      // 1. Update issue core and extended parameters with valid ISO datetimes
       await updateIssue({
         workspaceSlug,
         projectId,
@@ -150,8 +152,8 @@ export function IssueDetailModal({
           state_id: stateId || activeIssue.state_id,
           priority,
           parent_id: parentId || null,
-          start_date: startDate || null,
-          due_date: dueDate || null,
+          start_date: formatToIsoDateTime(startDate),
+          due_date: formatToIsoDateTime(dueDate),
           estimate_points: estimatePoints !== "" ? Number(estimatePoints) : null,
         },
       }).unwrap()
@@ -401,14 +403,28 @@ export function IssueDetailModal({
                   <Calendar className="size-3 text-muted-foreground" />
                   <span>Дата начала</span>
                 </Label>
-                <Input
-                  id="detail-start-date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  disabled={isSaving}
-                  className="h-10 text-xs sm:text-sm"
-                />
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    id="detail-start-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    disabled={isSaving}
+                    className="h-10 text-xs sm:text-sm"
+                  />
+                  {startDate && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setStartDate("")}
+                      className="size-10 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                      title="Очистить дату начала"
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -416,14 +432,28 @@ export function IssueDetailModal({
                   <Calendar className="size-3 text-muted-foreground" />
                   <span>Срок (дедлайн)</span>
                 </Label>
-                <Input
-                  id="detail-due-date"
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  disabled={isSaving}
-                  className="h-10 text-xs sm:text-sm"
-                />
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    id="detail-due-date"
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    disabled={isSaving}
+                    className="h-10 text-xs sm:text-sm"
+                  />
+                  {dueDate && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDueDate("")}
+                      className="size-10 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                      title="Очистить срок"
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-1.5">

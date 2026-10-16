@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ArrowRight, Calendar, Subtitles, Trash2, Zap } from "lucide-react"
+import { ArrowRight, Calendar, Subtitles, Trash2, X, Zap } from "lucide-react"
 
 import {
   DropdownMenu,
@@ -11,6 +11,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { PRIORITY_CONFIG, getStateGroupIcon } from "./kanbanConstants"
 import { resolveAssigneeDisplay, type ResolvedMember } from "./assigneeUtils"
+import {
+  formatToIsoDateTime,
+  toDateInputValue,
+  formatDisplayDate,
+  isDateOverdue,
+} from "@/lib/dateUtils"
 import { cn } from "@/lib/utils"
 import type { Issue, ProjectState } from "@/types/api"
 
@@ -24,6 +30,7 @@ export interface KanbanCardProps {
   onSelect: (issue: Issue) => void
   onMoveState: (issueId: string, targetStateId: string) => void
   onDelete: (issueId: string, title: string) => void
+  onUpdateDueDate?: (issueId: string, dueDate: string | null) => void
   onDragStart?: (issueId: string) => void
   onDragEnd?: () => void
 }
@@ -38,6 +45,7 @@ export function KanbanCard({
   onSelect,
   onMoveState,
   onDelete,
+  onUpdateDueDate,
   onDragStart,
   onDragEnd,
 }: KanbanCardProps) {
@@ -46,6 +54,13 @@ export function KanbanCard({
 
   const isDraggingRef = React.useRef(false)
   const dragTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+
+  const isOverdue = Boolean(
+    issue.due_date &&
+      isDateOverdue(issue.due_date) &&
+      currentState.group !== "completed" &&
+      currentState.group !== "cancelled"
+  )
 
   const handleDragStart = (e: React.DragEvent) => {
     isDraggingRef.current = true
@@ -147,7 +162,7 @@ export function KanbanCard({
       )}
 
       {/* Extended metadata badges: Points, Due Date, Subtask */}
-      {(issue.estimate_points != null || issue.due_date || issue.parent_id) && (
+      {(issue.estimate_points != null || issue.due_date || issue.parent_id || onUpdateDueDate) && (
         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
           {issue.estimate_points != null && (
             <span
@@ -159,19 +174,79 @@ export function KanbanCard({
             </span>
           )}
 
-          {issue.due_date && (
-            <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono border border-border/60 bg-muted/30 text-foreground"
-              title={`Срок: ${new Date(issue.due_date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}`}
+          {/* Interactive Due Date Badge */}
+          {onUpdateDueDate ? (
+            <div
+              className="relative inline-flex items-center group/due"
+              onClick={(e) => e.stopPropagation()}
             >
-              <Calendar className="size-2.5 text-muted-foreground" />
-              <span>
-                {new Date(issue.due_date).toLocaleDateString("ru-RU", {
-                  day: "numeric",
-                  month: "short",
-                })}
+              <label
+                className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono border transition-colors cursor-pointer select-none",
+                  isOverdue
+                    ? "border-destructive/40 bg-destructive/10 text-destructive font-semibold"
+                    : issue.due_date
+                      ? "border-border/60 bg-muted/30 text-foreground hover:bg-muted/60"
+                      : "border-dashed border-border/60 text-muted-foreground/60 hover:text-foreground hover:border-border opacity-0 group-hover:opacity-100 transition-opacity"
+                )}
+                title={
+                  issue.due_date
+                    ? `Срок: ${formatDisplayDate(issue.due_date)}${isOverdue ? " (Просрочено!)" : ""}. Нажмите для изменения.`
+                    : "Назначить срок дедлайна"
+                }
+              >
+                <Calendar
+                  className={cn(
+                    "size-2.5",
+                    isOverdue ? "text-destructive" : "text-muted-foreground"
+                  )}
+                />
+                <span>
+                  {issue.due_date
+                    ? formatDisplayDate(issue.due_date)
+                    : "+ Срок"}
+                </span>
+                <input
+                  type="date"
+                  value={toDateInputValue(issue.due_date)}
+                  onChange={(e) => {
+                    const iso = formatToIsoDateTime(e.target.value)
+                    onUpdateDueDate(issue.id, iso)
+                  }}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                />
+              </label>
+              {issue.due_date && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateDueDate(issue.id, null)}
+                  className="ml-0.5 text-muted-foreground/50 hover:text-destructive p-0.5 transition-colors cursor-pointer"
+                  title="Очистить дедлайн"
+                >
+                  <X className="size-2.5" />
+                </button>
+              )}
+            </div>
+          ) : (
+            issue.due_date && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono border",
+                  isOverdue
+                    ? "border-destructive/40 bg-destructive/10 text-destructive font-semibold"
+                    : "border-border/60 bg-muted/30 text-foreground"
+                )}
+                title={`Срок: ${formatDisplayDate(issue.due_date)}${isOverdue ? " (Просрочено!)" : ""}`}
+              >
+                <Calendar
+                  className={cn(
+                    "size-2.5",
+                    isOverdue ? "text-destructive" : "text-muted-foreground"
+                  )}
+                />
+                <span>{formatDisplayDate(issue.due_date)}</span>
               </span>
-            </span>
+            )
           )}
 
           {issue.parent_id && (
