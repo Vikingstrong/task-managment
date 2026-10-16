@@ -1,13 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { Check, Loader2, Plus, Tag, Trash2, X } from "lucide-react"
+import { Check, Edit2, Loader2, Plus, Tag, Trash2, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   useGetLabelsQuery,
   useCreateLabelMutation,
+  useUpdateLabelMutation,
   useDeleteLabelMutation,
   useAttachLabelToIssueMutation,
   useDetachLabelFromIssueMutation,
@@ -50,12 +51,18 @@ export function IssueLabels({
   const [attachLabel, { isLoading: isAttaching }] = useAttachLabelToIssueMutation()
   const [detachLabel, { isLoading: isDetaching }] = useDetachLabelFromIssueMutation()
   const [createLabel, { isLoading: isCreating }] = useCreateLabelMutation()
+  const [updateLabel, { isLoading: isUpdatingLabel }] = useUpdateLabelMutation()
   const [deleteLabel, { isLoading: isDeletingLabel }] = useDeleteLabelMutation()
 
   const [isOpen, setIsOpen] = React.useState(false)
   const [isCreatingNew, setIsCreatingNew] = React.useState(false)
   const [newLabelName, setNewLabelName] = React.useState("")
   const [newLabelColor, setNewLabelColor] = React.useState(PRESET_COLORS[0])
+
+  const [editingLabelId, setEditingLabelId] = React.useState<string | null>(null)
+  const [editLabelName, setEditLabelName] = React.useState("")
+  const [editLabelColor, setEditLabelColor] = React.useState(PRESET_COLORS[0])
+
   const [deletingLabel, setDeletingLabel] = React.useState<ProjectLabel | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
@@ -158,6 +165,35 @@ export function IssueLabels({
 
       setNewLabelName("")
       setIsCreatingNew(false)
+    } catch (err) {
+      setErrorMessage(getAuthErrorMessage(err))
+    }
+  }
+
+  const handleStartEditLabel = (lbl: ProjectLabel) => {
+    setEditingLabelId(lbl.id)
+    setEditLabelName(lbl.name)
+    setEditLabelColor(lbl.color)
+    setErrorMessage(null)
+  }
+
+  const handleCancelEditLabel = () => {
+    setEditingLabelId(null)
+  }
+
+  const handleSaveEditLabel = async (labelId: string) => {
+    const trimmed = editLabelName.trim()
+    if (!trimmed) return
+    setErrorMessage(null)
+    try {
+      await updateLabel({
+        workspaceSlug,
+        projectId,
+        labelId,
+        name: trimmed,
+        color: editLabelColor,
+      }).unwrap()
+      setEditingLabelId(null)
     } catch (err) {
       setErrorMessage(getAuthErrorMessage(err))
     }
@@ -326,6 +362,74 @@ export function IssueLabels({
             ) : (
               projectLabels.map((lbl) => {
                 const isSelected = attachedIds.has(lbl.id)
+                const isEditing = editingLabelId === lbl.id
+
+                if (isEditing) {
+                  return (
+                    <div
+                      key={lbl.id}
+                      className="p-2 rounded-md border border-border/80 bg-muted/30 space-y-2 text-xs"
+                    >
+                      <Input
+                        type="text"
+                        value={editLabelName}
+                        onChange={(e) => setEditLabelName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            handleSaveEditLabel(lbl.id)
+                          }
+                        }}
+                        disabled={isUpdatingLabel}
+                        className="h-7 text-xs"
+                      />
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          {PRESET_COLORS.map((c) => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => setEditLabelColor(c)}
+                              className={`size-3.5 rounded-full border transition-transform cursor-pointer ${
+                                editLabelColor === c
+                                  ? "scale-125 border-foreground"
+                                  : "border-transparent"
+                              }`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCancelEditLabel}
+                            disabled={isUpdatingLabel}
+                            className="h-6 px-2 text-[10px] cursor-pointer"
+                          >
+                            Отмена
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSaveEditLabel(lbl.id)}
+                            disabled={isUpdatingLabel || !editLabelName.trim()}
+                            className="h-6 px-2.5 text-[10px] bg-foreground text-background hover:bg-foreground/90 cursor-pointer"
+                          >
+                            {isUpdatingLabel ? (
+                              <Loader2 className="size-2.5 animate-spin" />
+                            ) : (
+                              "Сохранить"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+
                 return (
                   <div
                     key={lbl.id}
@@ -349,9 +453,20 @@ export function IssueLabels({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation()
+                          handleStartEditLabel(lbl)
+                        }}
+                        className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground transition-opacity cursor-pointer ml-1"
+                        title="Редактировать метку"
+                      >
+                        <Edit2 className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
                           setDeletingLabel(lbl)
                         }}
-                        className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity cursor-pointer ml-1"
+                        className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
                         title="Удалить метку из проекта"
                       >
                         <Trash2 className="size-3" />

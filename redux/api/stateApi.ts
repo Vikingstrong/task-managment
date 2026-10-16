@@ -71,6 +71,7 @@ export const stateApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { projectId }) => [
         { type: "State", id: `${projectId}_LIST` },
+        { type: "Issue", id: `${projectId}_LIST` },
       ],
     }),
 
@@ -82,6 +83,7 @@ export const stateApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { projectId }) => [
         { type: "State", id: `${projectId}_LIST` },
+        { type: "Issue", id: `${projectId}_LIST` },
       ],
     }),
   }),

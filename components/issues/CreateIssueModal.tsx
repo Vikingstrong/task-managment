@@ -20,6 +20,8 @@ export interface CreateIssueModalProps {
   states: ProjectState[]
   members: ResolvedMember[] | any[]
   initialStateId?: string
+  initialPriority?: IssuePriority
+  initialAssigneeId?: string
   isOpen: boolean
   onClose: () => void
 }
@@ -31,14 +33,16 @@ export function CreateIssueModal({
   states,
   members,
   initialStateId,
+  initialPriority,
+  initialAssigneeId,
   isOpen,
   onClose,
 }: CreateIssueModalProps) {
   const [title, setTitle] = React.useState("")
   const [description, setDescription] = React.useState("")
   const [stateId, setStateId] = React.useState(initialStateId || states[0]?.id || "")
-  const [priority, setPriority] = React.useState<IssuePriority>("none")
-  const [assigneeId, setAssigneeId] = React.useState<string>("")
+  const [priority, setPriority] = React.useState<IssuePriority>(initialPriority || "none")
+  const [assigneeId, setAssigneeId] = React.useState<string>(initialAssigneeId || "")
   const [startDate, setStartDate] = React.useState<string>("")
   const [dueDate, setDueDate] = React.useState<string>("")
   const [estimatePoints, setEstimatePoints] = React.useState<string>("")
@@ -63,8 +67,8 @@ export function CreateIssueModal({
       setTitle("")
       setDescription("")
       setStateId(initialStateId || states[0]?.id || "")
-      setPriority("none")
-      setAssigneeId("")
+      setPriority(initialPriority || "none")
+      setAssigneeId(initialAssigneeId || "")
       setStartDate("")
       setDueDate("")
       setEstimatePoints("")
@@ -72,7 +76,7 @@ export function CreateIssueModal({
       setSelectedLabelIds([])
       setErrorMessage(null)
     }
-  }, [isOpen, initialStateId, states])
+  }, [isOpen, initialStateId, initialPriority, initialAssigneeId, states])
 
   const toggleLabel = (labelId: string) => {
     setSelectedLabelIds((prev) =>
