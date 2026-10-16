@@ -2,11 +2,16 @@
 
 import * as React from "react"
 import {
+  Calendar,
   FileText,
+  History,
   Link as LinkIcon,
   Loader2,
   MessageSquare,
+  Paperclip,
+  Subtitles,
   Trash2,
+  Zap,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -14,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   useGetIssueQuery,
+  useGetIssuesQuery,
   useUpdateIssueMutation,
   useAddIssueAssigneeMutation,
   useRemoveIssueAssigneeMutation,
@@ -23,6 +29,8 @@ import { MacModal } from "@/components/common/MacModal"
 import { IssueLabels } from "./IssueLabels"
 import { IssueComments } from "./IssueComments"
 import { IssueRelations } from "./IssueRelations"
+import { IssueAttachments } from "./IssueAttachments"
+import { IssueActivity } from "./IssueActivity"
 import type { Issue, IssuePriority, ProjectState } from "@/types/api"
 import { extractAssigneeId, type ResolvedMember } from "./assigneeUtils"
 import { cn } from "@/lib/utils"
@@ -37,6 +45,14 @@ export interface IssueDetailModalProps {
   isOpen: boolean
   onClose: () => void
   onDelete: (issueId: string, title: string) => void
+  onSelectIssue?: (issue: Issue) => void
+}
+
+type TabKey = "properties" | "comments" | "attachments" | "activity" | "relations"
+
+function toDateInputString(isoString?: string | null): string {
+  if (!isoString) return ""
+  return isoString.split("T")[0]
 }
 
 export function IssueDetailModal({
@@ -49,13 +65,21 @@ export function IssueDetailModal({
   isOpen,
   onClose,
   onDelete,
+  onSelectIssue,
 }: IssueDetailModalProps) {
-  const [activeTab, setActiveTab] = React.useState<"properties" | "comments" | "relations">("properties")
+  const [activeTab, setActiveTab] = React.useState<TabKey>("properties")
   const [title, setTitle] = React.useState(issue?.title || "")
   const [description, setDescription] = React.useState(issue?.description || "")
   const [stateId, setStateId] = React.useState(issue?.state_id || "")
   const [priority, setPriority] = React.useState<IssuePriority>(issue?.priority || "none")
   const [assigneeId, setAssigneeId] = React.useState<string>(extractAssigneeId(issue))
+  const [startDate, setStartDate] = React.useState<string>(toDateInputString(issue?.start_date))
+  const [dueDate, setDueDate] = React.useState<string>(toDateInputString(issue?.due_date))
+  const [estimatePoints, setEstimatePoints] = React.useState<string>(
+    issue?.estimate_points != null ? String(issue?.estimate_points) : ""
+  )
+  const [parentId, setParentId] = React.useState<string>(issue?.parent_id || "")
+
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = React.useState(false)
 
@@ -68,6 +92,11 @@ export function IssueDetailModal({
     { skip: !isOpen || !issue?.id }
   )
 
+  const { data: allIssues = [] } = useGetIssuesQuery(
+    { workspaceSlug, projectId },
+    { skip: !isOpen }
+  )
+
   const activeIssue = remoteIssue || issue
 
   React.useEffect(() => {
@@ -77,12 +106,26 @@ export function IssueDetailModal({
       setStateId(activeIssue.state_id)
       setPriority(activeIssue.priority)
       setAssigneeId(extractAssigneeId(activeIssue))
+      setStartDate(toDateInputString(activeIssue.start_date))
+      setDueDate(toDateInputString(activeIssue.due_date))
+      setEstimatePoints(
+        activeIssue.estimate_points != null ? String(activeIssue.estimate_points) : ""
+      )
+      setParentId(activeIssue.parent_id || "")
       setErrorMessage(null)
       setSaveSuccess(false)
     }
   }, [activeIssue?.id])
 
   if (!activeIssue) return null
+
+  // Potential parent tasks: all project tasks except current task and its subtasks
+  const parentCandidates = allIssues.filter(
+    (i) => i.id !== activeIssue.id && i.parent_id !== activeIssue.id
+  )
+
+  // Subtasks: tasks whose parent_id is current task
+  const subtasks = allIssues.filter((i) => i.parent_id === activeIssue.id)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -96,7 +139,7 @@ export function IssueDetailModal({
     }
 
     try {
-      // 1. Update issue core parameters
+      // 1. Update issue core and extended parameters
       await updateIssue({
         workspaceSlug,
         projectId,
@@ -106,6 +149,10 @@ export function IssueDetailModal({
           description: description.trim() || null,
           state_id: stateId || activeIssue.state_id,
           priority,
+          parent_id: parentId || null,
+          start_date: startDate || null,
+          due_date: dueDate || null,
+          estimate_points: estimatePoints !== "" ? Number(estimatePoints) : null,
         },
       }).unwrap()
 
@@ -178,18 +225,18 @@ export function IssueDetailModal({
       isOpen={isOpen}
       onClose={onClose}
       title={`Задача ${projectIdentifier}-${activeIssue.sequence_id}`}
-      subtitle="Детали, обсуждение и связи"
+      subtitle="Детали, обсуждение, вложения и аудит"
       tag={`${projectIdentifier}-${activeIssue.sequence_id}`}
       defaultWidth="max-w-2xl sm:max-w-3xl"
       maximizedWidth="max-w-5xl"
     >
       {/* Modal Internal Navigation Tabs */}
-      <div className="flex border-b border-border bg-muted/20 px-6 pt-2 gap-1 text-xs font-medium">
+      <div className="flex border-b border-border bg-muted/20 px-6 pt-2 gap-1 text-xs font-medium overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab("properties")}
           className={cn(
-            "flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px transition-colors cursor-pointer",
+            "flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px transition-colors cursor-pointer shrink-0",
             activeTab === "properties"
               ? "border-foreground text-foreground font-semibold"
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -202,7 +249,7 @@ export function IssueDetailModal({
           type="button"
           onClick={() => setActiveTab("comments")}
           className={cn(
-            "flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px transition-colors cursor-pointer",
+            "flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px transition-colors cursor-pointer shrink-0",
             activeTab === "comments"
               ? "border-foreground text-foreground font-semibold"
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -213,9 +260,35 @@ export function IssueDetailModal({
         </button>
         <button
           type="button"
+          onClick={() => setActiveTab("attachments")}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px transition-colors cursor-pointer shrink-0",
+            activeTab === "attachments"
+              ? "border-foreground text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Paperclip className="size-3.5" />
+          <span>Вложения</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("activity")}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px transition-colors cursor-pointer shrink-0",
+            activeTab === "activity"
+              ? "border-foreground text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <History className="size-3.5" />
+          <span>История</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setActiveTab("relations")}
           className={cn(
-            "flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px transition-colors cursor-pointer",
+            "flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px transition-colors cursor-pointer shrink-0",
             activeTab === "relations"
               ? "border-foreground text-foreground font-semibold"
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -260,6 +333,7 @@ export function IssueDetailModal({
               />
             </div>
 
+            {/* Core Workflow Grid: State, Priority, Assignee */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="detail-state" className="text-xs sm:text-sm font-medium">
@@ -319,6 +393,111 @@ export function IssueDetailModal({
                 </select>
               </div>
             </div>
+
+            {/* Extended Fields Grid: Start Date, Due Date, Estimate Points */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+              <div className="space-y-1.5">
+                <Label htmlFor="detail-start-date" className="text-xs sm:text-sm font-medium flex items-center gap-1.5">
+                  <Calendar className="size-3 text-muted-foreground" />
+                  <span>Дата начала</span>
+                </Label>
+                <Input
+                  id="detail-start-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  disabled={isSaving}
+                  className="h-10 text-xs sm:text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="detail-due-date" className="text-xs sm:text-sm font-medium flex items-center gap-1.5">
+                  <Calendar className="size-3 text-muted-foreground" />
+                  <span>Срок (дедлайн)</span>
+                </Label>
+                <Input
+                  id="detail-due-date"
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  disabled={isSaving}
+                  className="h-10 text-xs sm:text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="detail-estimate" className="text-xs sm:text-sm font-medium flex items-center gap-1.5">
+                  <Zap className="size-3 text-muted-foreground" />
+                  <span>Оценка (Points)</span>
+                </Label>
+                <Input
+                  id="detail-estimate"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  placeholder="0"
+                  value={estimatePoints}
+                  onChange={(e) => setEstimatePoints(e.target.value)}
+                  disabled={isSaving}
+                  className="h-10 text-xs sm:text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Parent Task Selector */}
+            <div className="space-y-1.5 pt-1">
+              <Label htmlFor="detail-parent" className="text-xs sm:text-sm font-medium flex items-center gap-1.5">
+                <Subtitles className="size-3 text-muted-foreground" />
+                <span>Родительская задача</span>
+              </Label>
+              <select
+                id="detail-parent"
+                value={parentId}
+                onChange={(e) => setParentId(e.target.value)}
+                disabled={isSaving}
+                className="h-10 w-full rounded-md border border-input bg-card px-3 text-xs sm:text-sm outline-hidden focus:ring-1 focus:ring-ring cursor-pointer"
+              >
+                <option value="">Без родительской задачи (основная задача)</option>
+                {parentCandidates.map((cand) => (
+                  <option key={cand.id} value={cand.id}>
+                    {projectIdentifier}-{cand.sequence_id}: {cand.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Subtasks List if present */}
+            {subtasks.length > 0 && (
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-3 space-y-2">
+                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Subtitles className="size-3.5 text-muted-foreground" />
+                  <span>Подзадачи ({subtasks.length})</span>
+                </span>
+                <div className="space-y-1.5">
+                  {subtasks.map((st) => (
+                    <div
+                      key={st.id}
+                      onClick={() => onSelectIssue?.(st)}
+                      className="flex items-center justify-between text-xs p-2 rounded-md border border-border/50 bg-card hover:bg-muted/40 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="font-mono text-[11px] font-semibold text-muted-foreground">
+                          {projectIdentifier}-{st.sequence_id}
+                        </span>
+                        <span className="text-foreground font-medium truncate">
+                          {st.title}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0 border border-border/40 px-1.5 py-0.5 rounded">
+                        {st.priority}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Current Assignee Indicator */}
             {currentMember && (
@@ -416,7 +595,25 @@ export function IssueDetailModal({
           />
         )}
 
-        {/* Tab 3: Relations */}
+        {/* Tab 3: Attachments / Files */}
+        {activeTab === "attachments" && (
+          <IssueAttachments
+            workspaceSlug={workspaceSlug}
+            projectId={projectId}
+            issueId={activeIssue.id}
+          />
+        )}
+
+        {/* Tab 4: Activity / Audit Trail */}
+        {activeTab === "activity" && (
+          <IssueActivity
+            workspaceSlug={workspaceSlug}
+            projectId={projectId}
+            issueId={activeIssue.id}
+          />
+        )}
+
+        {/* Tab 5: Relations */}
         {activeTab === "relations" && (
           <IssueRelations
             workspaceSlug={workspaceSlug}

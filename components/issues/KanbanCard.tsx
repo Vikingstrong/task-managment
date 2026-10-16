@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ArrowRight, Trash2 } from "lucide-react"
+import { ArrowRight, Calendar, Subtitles, Trash2, Zap } from "lucide-react"
 
 import {
   DropdownMenu,
@@ -143,6 +143,46 @@ export function KanbanCard({
               </span>
             )
           })}
+        </div>
+      )}
+
+      {/* Extended metadata badges: Points, Due Date, Subtask */}
+      {(issue.estimate_points != null || issue.due_date || issue.parent_id) && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+          {issue.estimate_points != null && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono border border-border/60 bg-muted/30 text-foreground"
+              title={`Оценка: ${issue.estimate_points} points`}
+            >
+              <Zap className="size-2.5 text-muted-foreground" />
+              <span>{issue.estimate_points} pts</span>
+            </span>
+          )}
+
+          {issue.due_date && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono border border-border/60 bg-muted/30 text-foreground"
+              title={`Срок: ${new Date(issue.due_date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}`}
+            >
+              <Calendar className="size-2.5 text-muted-foreground" />
+              <span>
+                {new Date(issue.due_date).toLocaleDateString("ru-RU", {
+                  day: "numeric",
+                  month: "short",
+                })}
+              </span>
+            </span>
+          )}
+
+          {issue.parent_id && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono border border-border/60 bg-muted/30 text-muted-foreground"
+              title="Подзадача"
+            >
+              <Subtitles className="size-2.5 text-muted-foreground" />
+              <span>подзадача</span>
+            </span>
+          )}
         </div>
       )}
 

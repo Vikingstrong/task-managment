@@ -7,17 +7,28 @@ import {
   AlertCircle,
   ArrowLeft,
   Check,
+  Copy,
+  ExternalLink,
+  KeyRound,
   Loader2,
   ShieldAlert,
   Trash2,
   UserPlus,
   Users,
+  X,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  getSentInvites,
+  saveSentInvite,
+  removeSentInvite,
+  addLocalPendingInvite,
+  type SentInviteRecord,
+} from "@/lib/invites"
 import {
   useGetWorkspaceQuery,
   useUpdateWorkspaceMutation,
@@ -29,7 +40,7 @@ import {
 } from "@/redux/api/workspaceApi"
 import { useGetMeQuery } from "@/redux/api/authApi"
 import { getAuthErrorMessage } from "@/lib/auth/errorHandler"
-import type { Workspace, WorkspaceRole } from "@/types/api"
+import type { Workspace, WorkspaceRole, WorkspaceInvite } from "@/types/api"
 
 interface WorkspaceSettingsViewProps {
   workspaceSlug: string
@@ -195,8 +206,15 @@ export default function WorkspaceSettingsView({
   // Invite Form state
   const [inviteEmail, setInviteEmail] = React.useState("")
   const [inviteRole, setInviteRole] = React.useState<WorkspaceRole>("member")
-  const [inviteSuccess, setInviteSuccess] = React.useState(false)
   const [inviteError, setInviteError] = React.useState<string | null>(null)
+  const [createdInvite, setCreatedInvite] = React.useState<WorkspaceInvite | null>(null)
+  const [copiedLink, setCopiedLink] = React.useState(false)
+  const [copiedToken, setCopiedToken] = React.useState(false)
+  const [sentInvites, setSentInvites] = React.useState<SentInviteRecord[]>([])
+
+  React.useEffect(() => {
+    setSentInvites(getSentInvites(workspaceSlug))
+  }, [workspaceSlug])
 
   // Danger Zone Delete state
   const [deleteConfirmation, setDeleteConfirmation] = React.useState("")
@@ -234,10 +252,29 @@ export default function WorkspaceSettingsView({
 
   const isOwner = currentUser?.id === workspace.owner_id
 
+  const handleCopyLink = (token: string) => {
+    if (typeof window === "undefined") return
+    const link = `${window.location.origin}/invites/${token}`
+    navigator.clipboard.writeText(link)
+    setCopiedLink(true)
+    setTimeout(() => setCopiedLink(false), 2000)
+  }
+
+  const handleCopyToken = (token: string) => {
+    if (typeof window === "undefined") return
+    navigator.clipboard.writeText(token)
+    setCopiedToken(true)
+    setTimeout(() => setCopiedToken(false), 2000)
+  }
+
+  const handleRemoveSentInvite = (token: string) => {
+    removeSentInvite(workspaceSlug, token)
+    setSentInvites(getSentInvites(workspaceSlug))
+  }
+
   const handleInviteSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setInviteError(null)
-    setInviteSuccess(false)
 
     if (!inviteEmail.trim()) {
       setInviteError("Введите корректный email")
@@ -245,15 +282,37 @@ export default function WorkspaceSettingsView({
     }
 
     try {
-      await inviteMember({
+      const newInvite = await inviteMember({
         workspaceSlug,
         email: inviteEmail.trim(),
         role: inviteRole,
       }).unwrap()
 
-      setInviteSuccess(true)
+      setCreatedInvite(newInvite)
       setInviteEmail("")
-      setTimeout(() => setInviteSuccess(false), 3000)
+
+      const record: SentInviteRecord = {
+        id: newInvite.id,
+        email: newInvite.email,
+        role: newInvite.role,
+        token: newInvite.token,
+        workspaceSlug,
+        createdAt: newInvite.created_at || new Date().toISOString(),
+        expiresAt: newInvite.expires_at,
+      }
+
+      saveSentInvite(workspaceSlug, record)
+      addLocalPendingInvite({
+        token: newInvite.token,
+        email: newInvite.email,
+        workspaceSlug,
+        workspaceName: workspace.name,
+        role: newInvite.role,
+        createdAt: record.createdAt,
+        expiresAt: newInvite.expires_at,
+      })
+
+      setSentInvites(getSentInvites(workspaceSlug))
     } catch (err: unknown) {
       setInviteError(getAuthErrorMessage(err))
     }
@@ -477,12 +536,168 @@ export default function WorkspaceSettingsView({
                   </p>
                 )}
 
-                {inviteSuccess && (
+                {createdInvite && (
                   <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
                     Приглашение успешно отправлено
                   </p>
                 )}
               </form>
+
+              {/* Prominent Generated Invite Card */}
+              {createdInvite && (
+                <div className="rounded-xl border border-border bg-muted/30 p-4 sm:p-5 space-y-3.5 shadow-2xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-foreground">
+                        <Check className="size-4 text-emerald-500" />
+                        <span>Приглашение для {createdInvite.email} создано!</span>
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-muted-foreground leading-relaxed">
+                        Поскольку реальный SMTP-сервер не подключен, скопируйте ссылку или токен и отправьте получателю напрямую:
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCreatedInvite(null)}
+                      className="text-muted-foreground hover:text-foreground p-1 transition-colors cursor-pointer"
+                      title="Скрыть карточку"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+
+                  {/* Link Row */}
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-medium text-muted-foreground">
+                      Прямая ссылка на страницу приглашения:
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        readOnly
+                        value={
+                          typeof window !== "undefined"
+                            ? `${window.location.origin}/invites/${createdInvite.token}`
+                            : `/invites/${createdInvite.token}`
+                        }
+                        className="h-8 text-xs font-mono bg-card select-all"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleCopyLink(createdInvite.token)}
+                        className="h-8 text-xs gap-1.5 shrink-0 cursor-pointer shadow-2xs"
+                      >
+                        {copiedLink ? (
+                          <>
+                            <Check className="size-3.5 text-emerald-500" />
+                            <span>Скопировано</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="size-3.5" />
+                            <span>Скопировать ссылку</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Token Row */}
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-medium text-muted-foreground">
+                      Код токена:
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        readOnly
+                        value={createdInvite.token}
+                        className="h-8 text-xs font-mono bg-card select-all"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleCopyToken(createdInvite.token)}
+                        className="h-8 text-xs gap-1.5 shrink-0 cursor-pointer shadow-2xs"
+                      >
+                        {copiedToken ? (
+                          <>
+                            <Check className="size-3.5 text-emerald-500" />
+                            <span>Скопировано</span>
+                          </>
+                        ) : (
+                          <>
+                            <KeyRound className="size-3.5" />
+                            <span>Скопировать токен</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sent Invites History */}
+              {sentInvites.length > 0 && (
+                <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+                    <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <KeyRound className="size-3.5 text-muted-foreground" />
+                      <span>Отправленные приглашения ({sentInvites.length})</span>
+                    </h3>
+                    <span className="text-[11px] text-muted-foreground font-mono">
+                      Сохранены локально
+                    </span>
+                  </div>
+
+                  <div className="divide-y divide-border/60">
+                    {sentInvites.map((inv) => (
+                      <div
+                        key={inv.token}
+                        className="py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs"
+                      >
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-foreground truncate">
+                              {inv.email}
+                            </span>
+                            <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border">
+                              {inv.role}
+                            </span>
+                          </div>
+                          <p className="font-mono text-[11px] text-muted-foreground truncate">
+                            Токен: {inv.token.slice(0, 16)}...
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleCopyLink(inv.token)}
+                            className="h-7 px-2 text-xs gap-1 cursor-pointer"
+                            title="Скопировать ссылку"
+                          >
+                            <Copy className="size-3" />
+                            <span>Ссылка</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleRemoveSentInvite(inv.token)}
+                            className="size-7 text-muted-foreground hover:text-destructive cursor-pointer"
+                            title="Удалить из истории"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Members list */}
               <div className="space-y-2">

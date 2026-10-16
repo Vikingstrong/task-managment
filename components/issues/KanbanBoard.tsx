@@ -524,6 +524,7 @@ export default function KanbanBoard({
         isOpen={!!selectedIssue}
         onClose={() => setSelectedIssue(null)}
         onDelete={handleRequestDelete}
+        onSelectIssue={(issue) => setSelectedIssue(issue)}
       />
 
       {/* Delete Issue Modal (MacModal) */}

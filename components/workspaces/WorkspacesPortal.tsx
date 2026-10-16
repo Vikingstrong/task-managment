@@ -6,15 +6,27 @@ import { useRouter } from "next/navigation"
 import {
   AlertCircle,
   ArrowUpRight,
+  Check,
   FolderKanban,
+  KeyRound,
   Loader2,
   Plus,
-  X,
+  UserPlus,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useGetWorkspacesQuery } from "@/redux/api/workspaceApi"
+import { useGetMeQuery } from "@/redux/api/authApi"
+import { useAcceptInviteMutation } from "@/redux/api/inviteApi"
+import {
+  getPendingInvitesForEmail,
+  removeLocalPendingInvite,
+  subscribeToLocalInvites,
+  type PendingInviteRecord,
+} from "@/lib/invites"
+import { getAuthErrorMessage } from "@/lib/auth/errorHandler"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
+import { JoinByInviteModal } from "./JoinByInviteModal"
 import type { Workspace } from "@/types/api"
 
 function formatDate(dateString: string): string {
@@ -30,22 +42,61 @@ function formatDate(dateString: string): string {
   }
 }
 
-
-
-
 export default function WorkspacesPortal() {
   const router = useRouter()
-  const [isModalOpen, setIsModalOpen] = React.useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false)
+  const [isJoinModalOpen, setIsJoinModalOpen] = React.useState(false)
+  const [acceptingToken, setAcceptingToken] = React.useState<string | null>(null)
+
+  const { data: currentUser } = useGetMeQuery()
 
   const {
     data: workspaces = [],
     isLoading,
     isError,
     refetch,
-  } = useGetWorkspacesQuery()
+  } = useGetWorkspacesQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+  })
+
+  const [acceptInvite] = useAcceptInviteMutation()
+
+  // Local pending invites detection
+  const [pendingInvites, setPendingInvites] = React.useState<PendingInviteRecord[]>([])
+
+  const updatePending = React.useCallback(() => {
+    if (currentUser?.email) {
+      setPendingInvites(getPendingInvitesForEmail(currentUser.email))
+    } else {
+      setPendingInvites([])
+    }
+  }, [currentUser?.email])
+
+  React.useEffect(() => {
+    updatePending()
+    const unsubscribe = subscribeToLocalInvites(() => {
+      updatePending()
+    })
+    return unsubscribe
+  }, [updatePending])
 
   const handleCreated = (newWorkspace: Workspace) => {
     router.push(`/${newWorkspace.slug}`)
+  }
+
+  const handleAcceptDirect = async (token: string, targetSlug: string) => {
+    setAcceptingToken(token)
+    try {
+      await acceptInvite(token).unwrap()
+      removeLocalPendingInvite(token)
+      setPendingInvites((prev) => prev.filter((i) => i.token !== token))
+      refetch()
+      router.push(`/${targetSlug}`)
+    } catch (err: unknown) {
+      alert(getAuthErrorMessage(err))
+    } finally {
+      setAcceptingToken(null)
+    }
   }
 
   return (
@@ -62,16 +113,92 @@ export default function WorkspacesPortal() {
             </p>
           </div>
 
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setIsModalOpen(true)}
-            className="h-8 px-3 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 self-start sm:self-auto gap-1.5 cursor-pointer"
-          >
-            <Plus className="size-3.5" />
-            <span>Создать воркспейс</span>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsJoinModalOpen(true)}
+              className="h-8 px-3 text-xs font-medium gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <KeyRound className="size-3.5 text-muted-foreground" />
+              <span>Вступить по коду</span>
+            </Button>
+
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="h-8 px-3 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <Plus className="size-3.5" />
+              <span>Создать воркспейс</span>
+            </Button>
+          </div>
         </div>
+
+        {/* Pending Invites Banner for Current User */}
+        {pendingInvites.length > 0 && (
+          <div className="rounded-xl border border-border bg-muted/20 p-4 sm:p-5 space-y-3.5 shadow-2xs">
+            <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+              <div className="flex items-center gap-2">
+                <UserPlus className="size-4 text-foreground" />
+                <h2 className="text-sm font-semibold text-foreground">
+                  Вам доступны приглашения в пространства ({pendingInvites.length})
+                </h2>
+              </div>
+              <span className="text-[11px] font-mono text-muted-foreground">
+                Ожидают подтверждения
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {pendingInvites.map((inv) => (
+                <div
+                  key={inv.token}
+                  className="rounded-lg border border-border bg-card p-4 space-y-3 shadow-2xs flex flex-col justify-between"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-sm text-foreground truncate">
+                        {inv.workspaceName}
+                      </span>
+                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border shrink-0">
+                        {inv.role}
+                      </span>
+                    </div>
+                    <p className="text-xs font-mono text-muted-foreground">
+                      /{inv.workspaceSlug}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={acceptingToken === inv.token}
+                      onClick={() => handleAcceptDirect(inv.token, inv.workspaceSlug)}
+                      className="flex-1 h-8 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 gap-1.5 cursor-pointer"
+                    >
+                      {acceptingToken === inv.token ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Check className="size-3.5" />
+                      )}
+                      <span>Принять</span>
+                    </Button>
+                    <Link
+                      href={`/invites/${inv.token}`}
+                      className="inline-flex items-center justify-center h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground font-medium rounded-md border border-border bg-muted/20 hover:bg-muted/50 transition-colors"
+                    >
+                      Подробнее
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Loading Skeletons */}
         {isLoading && (
@@ -101,37 +228,52 @@ export default function WorkspacesPortal() {
               Не удалось загрузить список рабочих пространств
             </p>
             <Button
+              type="button"
               variant="outline"
               size="sm"
               onClick={() => refetch()}
               className="h-8 text-xs cursor-pointer"
             >
-              Попробовать снова
+              Повторить попытку
             </Button>
           </div>
         )}
 
         {/* Empty State */}
         {!isLoading && !isError && workspaces.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border bg-card/30 p-8 sm:p-14 text-center">
-            <div className="size-10 rounded-lg border border-border bg-muted/30 flex items-center justify-center mx-auto text-muted-foreground mb-3">
-              <FolderKanban className="size-5" />
+          <div className="rounded-xl border border-dashed border-border p-12 text-center space-y-4">
+            <div className="size-12 rounded-xl bg-muted/50 border border-border flex items-center justify-center mx-auto text-muted-foreground">
+              <FolderKanban className="size-6" />
             </div>
-            <h3 className="text-sm sm:text-base font-medium text-foreground">
-              Нет рабочих пространств
-            </h3>
-            <p className="text-xs sm:text-sm text-muted-foreground max-w-sm mx-auto mt-1 mb-5 leading-relaxed">
-              У вас пока нет ни одного рабочего пространства. Давайте создадим первое, чтобы начать работу с проектами и задачами.
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setIsModalOpen(true)}
-              className="h-8 px-4 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 gap-1.5 cursor-pointer"
-            >
-              <Plus className="size-3.5" />
-              <span>Создать первое пространство</span>
-            </Button>
+            <div className="space-y-1">
+              <h3 className="text-base font-semibold text-foreground">
+                У вас пока нет рабочих пространств
+              </h3>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                Создайте собственное рабочее пространство или введите код приглашения, чтобы присоединиться к существующей команде.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsJoinModalOpen(true)}
+                className="h-9 px-4 text-xs font-medium cursor-pointer"
+              >
+                <KeyRound className="size-3.5 mr-1.5 text-muted-foreground" />
+                Ввести код
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setIsCreateModalOpen(true)}
+                className="h-9 px-4 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 cursor-pointer"
+              >
+                <Plus className="size-3.5 mr-1.5" />
+                Создать воркспейс
+              </Button>
+            </div>
           </div>
         )}
 
@@ -142,7 +284,7 @@ export default function WorkspacesPortal() {
               <Link
                 key={workspace.id}
                 href={`/${workspace.slug}`}
-                className="group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-foreground/25 hover:shadow-sm hover:bg-muted/10 cursor-pointer shadow-2xs"
+                className="group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-foreground/40 hover:shadow-xs"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-3">
@@ -176,10 +318,16 @@ export default function WorkspacesPortal() {
       </div>
 
       <CreateWorkspaceModal
-        key={isModalOpen ? "open" : "closed"}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        key={isCreateModalOpen ? "create-open" : "create-closed"}
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
         onSuccess={handleCreated}
+      />
+
+      <JoinByInviteModal
+        isOpen={isJoinModalOpen}
+        onClose={() => setIsJoinModalOpen(false)}
+        onSuccess={() => refetch()}
       />
     </div>
   )

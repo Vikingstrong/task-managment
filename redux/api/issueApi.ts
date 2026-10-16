@@ -39,6 +39,7 @@ export interface UpdateIssueRequest {
     state_id?: string
     priority?: IssuePriority
     sort_order?: number
+    parent_id?: string | null
     start_date?: string | null
     due_date?: string | null
     estimate_points?: number | null
@@ -119,6 +120,7 @@ export const issueApi = baseApi.injectEndpoints({
       invalidatesTags: (_result, _error, { projectId, issueId }) => [
         { type: "Issue", id: issueId },
         { type: "Issue", id: `${projectId}_LIST` },
+        { type: "Activity", id: `${issueId}_LIST` },
       ],
     }),
 

@@ -71,9 +71,11 @@ const baseQueryWithReauth: BaseQueryFn<
             result = await rawBaseQuery(args, api, extraOptions)
           } else {
             api.dispatch(logout())
+            api.dispatch(baseApi.util.resetApiState())
           }
         } else {
           api.dispatch(logout())
+          api.dispatch(baseApi.util.resetApiState())
         }
       } finally {
         release()
@@ -105,6 +107,8 @@ export const baseApi = createApi({
     "Module",
     "Notification",
     "Attachment",
+    "Invite",
+    "Activity",
   ],
   endpoints: () => ({}),
 })

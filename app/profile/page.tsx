@@ -21,6 +21,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ChangePasswordCard } from "@/components/profile/ChangePasswordCard"
 import { useGetMeQuery, useUpdateMeMutation, useLogoutMutation } from "@/redux/api/authApi"
 import { useAppDispatch } from "@/redux/hooks"
+import { baseApi } from "@/redux/api/baseApi"
 import { logout as clientLogout } from "@/redux/features/authSlice"
 import { logout as serverLogout } from "@/actions/auth"
 import { getStoredTokens } from "@/lib/auth/cookies"
@@ -212,9 +213,13 @@ function ActiveSessionCard({ user }: { user: User }) {
       // Ignored
     } finally {
       dispatch(clientLogout())
-      await serverLogout()
-      router.push("/login")
-      router.refresh()
+      dispatch(baseApi.util.resetApiState())
+      try {
+        await serverLogout()
+      } catch {
+        // Ignore NEXT_REDIRECT
+      }
+      window.location.href = "/login"
     }
   }
 

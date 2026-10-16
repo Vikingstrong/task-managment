@@ -1,5 +1,5 @@
 import { baseApi } from "./baseApi"
-import type { Workspace, WorkspaceMember, WorkspaceRole } from "@/types/api"
+import type { Workspace, WorkspaceMember, WorkspaceRole, WorkspaceInvite } from "@/types/api"
 
 export interface CreateWorkspaceRequest {
   name: string
@@ -89,7 +89,7 @@ export const workspaceApi = baseApi.injectEndpoints({
       ],
     }),
 
-    inviteWorkspaceMember: builder.mutation<void, InviteMemberRequest>({
+    inviteWorkspaceMember: builder.mutation<WorkspaceInvite, InviteMemberRequest>({
       query: ({ workspaceSlug, ...body }) => ({
         url: `/workspaces/${workspaceSlug}/members/invite`,
         method: "POST",

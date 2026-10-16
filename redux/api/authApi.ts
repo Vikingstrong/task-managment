@@ -35,6 +35,7 @@ export const authApi = baseApi.injectEndpoints({
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         try {
           const { data } = await queryFulfilled
+          dispatch(baseApi.util.resetApiState())
           dispatch(
             setCredentials({
               user: data.user,
@@ -57,6 +58,7 @@ export const authApi = baseApi.injectEndpoints({
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         try {
           const { data } = await queryFulfilled
+          dispatch(baseApi.util.resetApiState())
           dispatch(
             setCredentials({
               user: data.user,
@@ -82,6 +84,7 @@ export const authApi = baseApi.injectEndpoints({
           await queryFulfilled
         } finally {
           dispatch(logoutAction())
+          dispatch(baseApi.util.resetApiState())
         }
       },
       invalidatesTags: ["Auth", "User"],

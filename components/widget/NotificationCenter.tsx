@@ -1,12 +1,21 @@
 "use client"
 
 import * as React from "react"
-import { Bell, CheckCheck, Loader2, MessageSquare, UserCheck } from "lucide-react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import {
+  Bell,
+  Check,
+  CheckCheck,
+  ExternalLink,
+  Loader2,
+  UserPlus,
+} from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -17,6 +26,15 @@ import {
   useMarkAllNotificationsReadMutation,
   useMarkNotificationReadMutation,
 } from "@/redux/api/notificationApi"
+import { useGetMeQuery } from "@/redux/api/authApi"
+import { useAcceptInviteMutation } from "@/redux/api/inviteApi"
+import {
+  getPendingInvitesForEmail,
+  removeLocalPendingInvite,
+  subscribeToLocalInvites,
+  type PendingInviteRecord,
+} from "@/lib/invites"
+import { getAuthErrorMessage } from "@/lib/auth/errorHandler"
 import type { Notification } from "@/types/api"
 
 interface NotificationCenterProps {
@@ -42,7 +60,10 @@ function formatNotificationTime(dateStr: string): string {
 }
 
 export function NotificationCenter({ workspaceSlug }: NotificationCenterProps) {
-  // If no workspaceSlug is provided, do not attempt to query
+  const router = useRouter()
+  const { data: currentUser } = useGetMeQuery()
+
+  // 1. Fetch system notifications for active workspace (if any)
   const { data, isLoading } = useGetNotificationsQuery(
     { workspaceSlug: workspaceSlug! },
     { skip: !workspaceSlug }
@@ -50,13 +71,35 @@ export function NotificationCenter({ workspaceSlug }: NotificationCenterProps) {
 
   const [markAllRead, { isLoading: isMarkingAll }] = useMarkAllNotificationsReadMutation()
   const [markOneRead] = useMarkNotificationReadMutation()
+  const [acceptInvite] = useAcceptInviteMutation()
+
+  // 2. Local pending invites state
+  const [pendingInvites, setPendingInvites] = React.useState<PendingInviteRecord[]>([])
+  const [acceptingToken, setAcceptingToken] = React.useState<string | null>(null)
+
+  const updatePendingInvites = React.useCallback(() => {
+    if (currentUser?.email) {
+      setPendingInvites(getPendingInvitesForEmail(currentUser.email))
+    } else {
+      setPendingInvites([])
+    }
+  }, [currentUser?.email])
+
+  React.useEffect(() => {
+    updatePendingInvites()
+    const unsubscribe = subscribeToLocalInvites(() => {
+      updatePendingInvites()
+    })
+    return unsubscribe
+  }, [updatePendingInvites])
 
   const notifications = data?.data || []
-  const unreadCount = data?.unread_count || 0
+  const workspaceUnreadCount = data?.unread_count || 0
+  const totalUnreadCount = workspaceUnreadCount + pendingInvites.length
 
   const handleMarkAll = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!workspaceSlug || unreadCount === 0) return
+    if (!workspaceSlug || workspaceUnreadCount === 0) return
     try {
       await markAllRead({ workspaceSlug }).unwrap()
     } catch {
@@ -76,6 +119,20 @@ export function NotificationCenter({ workspaceSlug }: NotificationCenterProps) {
     }
   }
 
+  const handleAcceptInvite = async (token: string, targetSlug: string) => {
+    setAcceptingToken(token)
+    try {
+      await acceptInvite(token).unwrap()
+      removeLocalPendingInvite(token)
+      setPendingInvites((prev) => prev.filter((i) => i.token !== token))
+      router.push(`/${targetSlug}`)
+    } catch (err: unknown) {
+      alert(getAuthErrorMessage(err))
+    } finally {
+      setAcceptingToken(null)
+    }
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -83,19 +140,19 @@ export function NotificationCenter({ workspaceSlug }: NotificationCenterProps) {
         title="Уведомления"
       >
         <Bell className="size-4" />
-        {unreadCount > 0 && (
+        {totalUnreadCount > 0 && (
           <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 font-mono text-[9px] font-bold text-background shadow-xs">
-            {unreadCount > 99 ? "99+" : unreadCount}
+            {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
           </span>
         )}
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-80 sm:w-96 p-1.5 shadow-md">
+      <DropdownMenuContent align="end" className="w-80 sm:w-96 p-2 shadow-md">
         <div className="flex items-center justify-between px-2 py-1.5">
           <DropdownMenuLabel className="p-0 text-xs font-semibold text-foreground">
-            Уведомления {unreadCount > 0 && `(${unreadCount})`}
+            Уведомления {totalUnreadCount > 0 && `(${totalUnreadCount})`}
           </DropdownMenuLabel>
-          {unreadCount > 0 && (
+          {workspaceUnreadCount > 0 && (
             <button
               type="button"
               onClick={handleMarkAll}
@@ -108,22 +165,89 @@ export function NotificationCenter({ workspaceSlug }: NotificationCenterProps) {
           )}
         </div>
 
-        <DropdownMenuSeparator className="my-1" />
+        <DropdownMenuSeparator className="my-1.5" />
 
-        <div className="max-h-80 overflow-y-auto space-y-0.5">
-          {!workspaceSlug ? (
-            <div className="py-6 text-center text-xs text-muted-foreground">
-              Выберите рабочее пространство для просмотра уведомлений
+        {/* 1. Pending Workspace Invites Section (Always visible across all pages) */}
+        {pendingInvites.length > 0 && (
+          <div className="p-2.5 rounded-lg border border-border/80 bg-muted/30 space-y-2 mb-2">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-foreground">
+              <span className="flex items-center gap-1.5">
+                <UserPlus className="size-3.5 text-foreground" />
+                Приглашения в пространства ({pendingInvites.length})
+              </span>
             </div>
+
+            <div className="space-y-1.5">
+              {pendingInvites.map((inv) => (
+                <div
+                  key={inv.token}
+                  className="rounded-md border border-border bg-card p-2 text-xs space-y-2 shadow-2xs"
+                >
+                  <div className="flex items-start justify-between gap-1.5">
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="font-semibold text-foreground truncate">
+                        {inv.workspaceName}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground font-mono truncate">
+                        /{inv.workspaceSlug} · роль: {inv.role}
+                      </p>
+                    </div>
+                    <Link
+                      href={`/invites/${inv.token}`}
+                      className="text-muted-foreground hover:text-foreground p-0.5"
+                      title="Открыть страницу приглашения"
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </Link>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1 border-t border-border/50">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={acceptingToken === inv.token}
+                      onClick={() => handleAcceptInvite(inv.token, inv.workspaceSlug)}
+                      className="h-6 px-2.5 text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 gap-1 cursor-pointer"
+                    >
+                      {acceptingToken === inv.token ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Check className="size-3" />
+                      )}
+                      <span>Принять</span>
+                    </Button>
+                    <Link
+                      href={`/invites/${inv.token}`}
+                      className="inline-flex items-center h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground font-medium rounded hover:bg-muted/40 transition-colors"
+                    >
+                      Подробнее
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 2. Workspace Notification Stream */}
+        <div className="max-h-72 overflow-y-auto space-y-0.5">
+          {!workspaceSlug ? (
+            pendingInvites.length === 0 ? (
+              <div className="py-6 text-center text-xs text-muted-foreground">
+                Выберите рабочее пространство для просмотра системных уведомлений
+              </div>
+            ) : null
           ) : isLoading ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
             </div>
           ) : notifications.length === 0 ? (
-            <div className="py-6 text-center text-xs text-muted-foreground space-y-1">
-              <p className="font-medium text-foreground">Нет уведомлений</p>
-              <p className="text-[11px]">Здесь будут появляться назначения и комментарии</p>
-            </div>
+            pendingInvites.length === 0 && (
+              <div className="py-6 text-center text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">Нет уведомлений</p>
+                <p className="text-[11px]">Здесь будут появляться назначения и комментарии</p>
+              </div>
+            )
           ) : (
             notifications.map((n) => {
               const isUnread = !n.is_read

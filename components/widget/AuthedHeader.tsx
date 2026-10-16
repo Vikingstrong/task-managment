@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ModeToggle } from "@/components/themes/ModeToggle"
+import { baseApi } from "@/redux/api/baseApi"
 import { useGetMeQuery, useLogoutMutation } from "@/redux/api/authApi"
 import { useGetWorkspacesQuery } from "@/redux/api/workspaceApi"
 import { useAppDispatch, useAppSelector } from "@/redux/hooks"
@@ -39,7 +40,9 @@ export default function AuthedHeader() {
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
 
   // 1. Get user profile
-  const { data: remoteUser } = useGetMeQuery()
+  const { data: remoteUser } = useGetMeQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+  })
   const localUser = useAppSelector((state) => state.auth.user)
   const user = remoteUser || localUser || {
     id: "",
@@ -49,7 +52,9 @@ export default function AuthedHeader() {
   }
 
   // 2. Get workspaces
-  const { data: workspaces = [] } = useGetWorkspacesQuery()
+  const { data: workspaces = [] } = useGetWorkspacesQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+  })
 
   // 3. Determine if currently inside an active workspace
   const pathSegments = pathname.split("/").filter(Boolean)
@@ -76,9 +81,13 @@ export default function AuthedHeader() {
       // Ignore network logout errors
     } finally {
       dispatch(clientLogout())
-      await serverLogout()
-      router.push("/login")
-      router.refresh()
+      dispatch(baseApi.util.resetApiState())
+      try {
+        await serverLogout()
+      } catch {
+        // Ignore NEXT_REDIRECT
+      }
+      window.location.href = "/login"
     }
   }
 

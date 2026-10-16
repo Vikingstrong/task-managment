@@ -10,6 +10,7 @@ import {
 
 import { useGetProjectQuery, useGetProjectMembersQuery } from "@/redux/api/projectApi"
 import { ProjectNavTabs } from "@/components/projects/ProjectNavTabs"
+import { ProjectMembersModal } from "@/components/projects/ProjectMembersModal"
 import KanbanBoard from "@/components/issues/KanbanBoard"
 
 interface ProjectDetailViewProps {
@@ -22,6 +23,7 @@ export default function ProjectDetailView({
   projectId,
 }: ProjectDetailViewProps) {
   const [activeTab, setActiveTab] = React.useState<"board" | "list">("board")
+  const [isMembersModalOpen, setIsMembersModalOpen] = React.useState(false)
 
   const { data: project, isLoading, isError } = useGetProjectQuery({
     workspaceSlug,
@@ -92,10 +94,18 @@ export default function ProjectDetailView({
           </div>
 
           <div className="flex items-center gap-3 text-xs font-mono text-muted-foreground">
-            <span className="flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setIsMembersModalOpen(true)}
+              className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 shadow-2xs hover:bg-muted/60 transition-colors text-foreground cursor-pointer"
+              title="Управление составом команды проекта"
+            >
               <Users className="size-3.5 text-muted-foreground" />
               <span>{members.length} участников</span>
-            </span>
+              <span className="text-[10px] text-muted-foreground font-sans underline underline-offset-2 ml-0.5">
+                Настроить
+              </span>
+            </button>
           </div>
         </div>
 
@@ -145,6 +155,16 @@ export default function ProjectDetailView({
             />
           </div>
         </div>
+
+        {/* Project Members Modal */}
+        <ProjectMembersModal
+          workspaceSlug={workspaceSlug}
+          projectId={projectId}
+          projectIdentifier={project.identifier}
+          projectName={project.name}
+          isOpen={isMembersModalOpen}
+          onClose={() => setIsMembersModalOpen(false)}
+        />
       </div>
     </div>
   )
