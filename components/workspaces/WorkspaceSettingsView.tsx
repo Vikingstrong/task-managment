@@ -8,11 +8,14 @@ import {
   ArrowLeft,
   Check,
   Copy,
+  Crown,
   ExternalLink,
   KeyRound,
   Loader2,
+  LogOut,
   ShieldAlert,
   Trash2,
+  UserCheck,
   UserPlus,
   Users,
   X,
@@ -22,6 +25,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { MacModal } from "@/components/common/MacModal"
 import {
   getSentInvites,
   saveSentInvite,
@@ -33,7 +37,10 @@ import {
   useGetWorkspaceQuery,
   useUpdateWorkspaceMutation,
   useDeleteWorkspaceMutation,
+  useLeaveWorkspaceMutation,
+  useTransferOwnershipMutation,
   useGetWorkspaceMembersQuery,
+  useAddWorkspaceMemberMutation,
   useInviteWorkspaceMemberMutation,
   useUpdateWorkspaceMemberMutation,
   useRemoveWorkspaceMemberMutation,
@@ -220,7 +227,26 @@ export default function WorkspaceSettingsView({
   const [deleteConfirmation, setDeleteConfirmation] = React.useState("")
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
 
+  // Direct member addition state
+  const [addMemberMode, setAddMemberMode] = React.useState<"invite" | "direct">("invite")
+  const [directUserId, setDirectUserId] = React.useState("")
+  const [directRole, setDirectRole] = React.useState<WorkspaceRole>("member")
+  const [directError, setDirectError] = React.useState<string | null>(null)
+  const [directSuccess, setDirectSuccess] = React.useState(false)
+
+  // Transfer ownership state
+  const [isTransferModalOpen, setIsTransferModalOpen] = React.useState(false)
+  const [selectedTransferUserId, setSelectedTransferUserId] = React.useState("")
+  const [transferError, setTransferError] = React.useState<string | null>(null)
+
+  // Leave workspace state
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = React.useState(false)
+  const [leaveError, setLeaveError] = React.useState<string | null>(null)
+
   const [deleteWorkspace, { isLoading: isDeleting }] = useDeleteWorkspaceMutation()
+  const [leaveWorkspace, { isLoading: isLeaving }] = useLeaveWorkspaceMutation()
+  const [transferOwnership, { isLoading: isTransferring }] = useTransferOwnershipMutation()
+  const [addWorkspaceMember, { isLoading: isAddingMember }] = useAddWorkspaceMemberMutation()
   const [inviteMember, { isLoading: isInviting }] = useInviteWorkspaceMemberMutation()
   const [updateMemberRole] = useUpdateWorkspaceMemberMutation()
   const [removeMember] = useRemoveWorkspaceMemberMutation()
@@ -363,6 +389,62 @@ export default function WorkspaceSettingsView({
     }
   }
 
+  const handleDirectAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setDirectError(null)
+    setDirectSuccess(false)
+
+    const trimmedId = directUserId.trim()
+    if (!trimmedId) {
+      setDirectError("Введите ID (UUID) пользователя")
+      return
+    }
+
+    try {
+      await addWorkspaceMember({
+        workspaceSlug,
+        userId: trimmedId,
+        role: directRole,
+      }).unwrap()
+
+      setDirectSuccess(true)
+      setDirectUserId("")
+      setTimeout(() => setDirectSuccess(false), 3000)
+    } catch (err: unknown) {
+      setDirectError(getAuthErrorMessage(err))
+    }
+  }
+
+  const handleTransferOwnership = async () => {
+    if (!selectedTransferUserId) {
+      setTransferError("Выберите участника для передачи прав")
+      return
+    }
+
+    setTransferError(null)
+    try {
+      await transferOwnership({
+        workspaceSlug,
+        userId: selectedTransferUserId,
+      }).unwrap()
+      setIsTransferModalOpen(false)
+      setSelectedTransferUserId("")
+    } catch (err: unknown) {
+      setTransferError(getAuthErrorMessage(err))
+    }
+  }
+
+  const handleLeaveWorkspace = async () => {
+    setLeaveError(null)
+    try {
+      await leaveWorkspace(workspaceSlug).unwrap()
+      router.push("/")
+      router.refresh()
+    } catch (err: unknown) {
+      setLeaveError(getAuthErrorMessage(err))
+    }
+  }
+
   return (
     <div className="min-h-[calc(100dvh-3.5rem)] px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
       <div className="mx-auto w-full max-w-[1400px] space-y-8">
@@ -390,74 +472,140 @@ export default function WorkspaceSettingsView({
           </div>
         </div>
 
-        {/* Responsive Grid Layout: Left Column (General + Danger), Right Column (Members) */}
+        {/* Responsive Grid Layout: Left Column (General + Danger/Actions), Right Column (Members) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left Column */}
           <div className="lg:col-span-5 space-y-6">
             {/* 1. General Info Card */}
             <GeneralSettingsCard key={workspace.id} workspace={workspace} />
 
-            {/* 2. Danger Zone Card */}
-            {isOwner && (
+            {/* 2. Actions & Danger Zone */}
+            {isOwner ? (
+              <>
+                {/* Transfer Ownership Card */}
+                <div className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-4">
+                  <div className="flex items-start gap-3">
+                    <Crown className="size-4 text-foreground mt-0.5 shrink-0" />
+                    <div className="space-y-1">
+                      <h2 className="text-sm font-semibold text-foreground">
+                        Передача прав владельца
+                      </h2>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Смена основного владельца пространства. После передачи вы потеряете статус владельца, но останетесь администратором.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-border/60">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTransferUserId("")
+                        setTransferError(null)
+                        setIsTransferModalOpen(true)
+                      }}
+                      className="h-9 text-xs font-medium cursor-pointer w-full sm:w-auto gap-1.5"
+                    >
+                      <Crown className="size-3.5 text-muted-foreground" />
+                      <span>Передать владение пространством...</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Delete Workspace Card */}
+                <div className="rounded-xl border border-destructive/20 bg-card p-6 shadow-xs space-y-4">
+                  <div className="flex items-start gap-3">
+                    <ShieldAlert className="size-4 text-destructive mt-0.5 shrink-0" />
+                    <div className="space-y-1">
+                      <h2 className="text-sm font-semibold text-destructive">
+                        Опасная зона: Удаление пространства
+                      </h2>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Удаление приведет к безвозвратной потере всех проектов, задач, спринтов и истории активности. Это действие нельзя отменить.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form
+                    onSubmit={handleDeleteWorkspace}
+                    className="space-y-3.5 pt-3 border-t border-destructive/10"
+                  >
+                    <div className="space-y-1.5">
+                      <Label htmlFor="del-slug" className="text-xs text-muted-foreground">
+                        Для подтверждения введите имя slug:{" "}
+                        <code className="text-foreground font-mono font-medium">
+                          {workspace.slug}
+                        </code>
+                      </Label>
+                      <Input
+                        id="del-slug"
+                        type="text"
+                        required
+                        placeholder={workspace.slug}
+                        value={deleteConfirmation}
+                        onChange={(e) => setDeleteConfirmation(e.target.value)}
+                        disabled={isDeleting}
+                        className="h-9 text-xs sm:text-sm font-mono w-full"
+                      />
+                    </div>
+
+                    {deleteError && (
+                      <p className="text-xs text-destructive font-medium">
+                        {deleteError}
+                      </p>
+                    )}
+
+                    <Button
+                      type="submit"
+                      variant="destructive"
+                      size="sm"
+                      disabled={isDeleting || deleteConfirmation !== workspace.slug}
+                      className="h-9 text-xs font-medium cursor-pointer w-full sm:w-auto"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          <span>Удаление...</span>
+                        </>
+                      ) : (
+                        "Удалить рабочее пространство"
+                      )}
+                    </Button>
+                  </form>
+                </div>
+              </>
+            ) : (
+              /* Leave Workspace Card for Non-Owner */
               <div className="rounded-xl border border-destructive/20 bg-card p-6 shadow-xs space-y-4">
                 <div className="flex items-start gap-3">
-                  <ShieldAlert className="size-4 text-destructive mt-0.5 shrink-0" />
+                  <LogOut className="size-4 text-destructive mt-0.5 shrink-0" />
                   <div className="space-y-1">
                     <h2 className="text-sm font-semibold text-destructive">
-                      Опасная зона: Удаление пространства
+                      Выход из пространства
                     </h2>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Удаление приведет к безвозвратной потере всех проектов, задач, спринтов и истории активности. Это действие нельзя отменить.
+                      Вы можете добровольно покинуть это рабочее пространство. Вы потеряете доступ ко всем проектам, задачам и дискуссиям.
                     </p>
                   </div>
                 </div>
 
-                <form
-                  onSubmit={handleDeleteWorkspace}
-                  className="space-y-3.5 pt-3 border-t border-destructive/10"
-                >
-                  <div className="space-y-1.5">
-                    <Label htmlFor="del-slug" className="text-xs text-muted-foreground">
-                      Для подтверждения введите имя slug:{" "}
-                      <code className="text-foreground font-mono font-medium">
-                        {workspace.slug}
-                      </code>
-                    </Label>
-                    <Input
-                      id="del-slug"
-                      type="text"
-                      required
-                      placeholder={workspace.slug}
-                      value={deleteConfirmation}
-                      onChange={(e) => setDeleteConfirmation(e.target.value)}
-                      disabled={isDeleting}
-                      className="h-9 text-xs sm:text-sm font-mono w-full"
-                    />
-                  </div>
-
-                  {deleteError && (
-                    <p className="text-xs text-destructive font-medium">
-                      {deleteError}
-                    </p>
-                  )}
-
+                <div className="pt-2 border-t border-destructive/10">
                   <Button
-                    type="submit"
+                    type="button"
                     variant="destructive"
                     size="sm"
-                    disabled={isDeleting || deleteConfirmation !== workspace.slug}
-                    className="h-9 text-xs font-medium cursor-pointer w-full sm:w-auto"
+                    onClick={() => {
+                      setLeaveError(null)
+                      setIsLeaveModalOpen(true)
+                    }}
+                    className="h-9 text-xs font-medium cursor-pointer w-full sm:w-auto gap-1.5"
                   >
-                    {isDeleting ? (
-                      <>
-                        <Loader2 className="size-3.5 animate-spin" />
-                        <span>Удаление...</span>
-                      </>
-                    ) : (
-                      "Удалить рабочее пространство"
-                    )}
+                    <LogOut className="size-3.5" />
+                    <span>Покинуть пространство</span>
                   </Button>
-                </form>
+                </div>
               </div>
             )}
           </div>
@@ -480,68 +628,161 @@ export default function WorkspaceSettingsView({
                 </span>
               </div>
 
-              {/* Invite form */}
-              <form
-                onSubmit={handleInviteSubmit}
-                className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3.5"
-              >
-                <div className="text-xs sm:text-sm font-medium text-foreground flex items-center gap-1.5">
-                  <UserPlus className="size-4" />
-                  <span>Пригласить нового участника</span>
-                </div>
+              {/* Member Addition Mode Switcher */}
+              <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/40 p-1 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setAddMemberMode("invite")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                    addMemberMode === "invite"
+                      ? "bg-background text-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Приглашение по email / ссылке
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddMemberMode("direct")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                    addMemberMode === "direct"
+                      ? "bg-background text-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Добавить по ID пользователя
+                </button>
+              </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div className="sm:col-span-2">
-                    <Input
-                      type="email"
-                      required
-                      placeholder="colleague@example.com"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      disabled={isInviting}
-                      className="h-9 text-xs sm:text-sm bg-card"
-                    />
+              {/* Invite by Email / Link form */}
+              {addMemberMode === "invite" && (
+                <form
+                  onSubmit={handleInviteSubmit}
+                  className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3.5"
+                >
+                  <div className="text-xs sm:text-sm font-medium text-foreground flex items-center gap-1.5">
+                    <UserPlus className="size-4" />
+                    <span>Пригласить нового участника</span>
                   </div>
 
-                  <div className="flex gap-2">
-                    <select
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value as WorkspaceRole)}
-                      disabled={isInviting}
-                      className="h-9 w-full rounded-md border border-input bg-card px-2.5 text-xs sm:text-sm outline-hidden focus:ring-1 focus:ring-ring"
-                    >
-                      <option value="member">Участник</option>
-                      <option value="admin">Администратор</option>
-                      <option value="guest">Гость</option>
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="sm:col-span-2">
+                      <Input
+                        type="email"
+                        required
+                        placeholder="colleague@example.com"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        disabled={isInviting}
+                        className="h-9 text-xs sm:text-sm bg-card"
+                      />
+                    </div>
 
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={isInviting}
-                      className="h-9 text-xs px-3.5 bg-foreground text-background hover:bg-foreground/90 shrink-0 cursor-pointer"
-                    >
-                      {isInviting ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        "Пригласить"
-                      )}
-                    </Button>
+                    <div className="flex gap-2">
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value as WorkspaceRole)}
+                        disabled={isInviting}
+                        className="h-9 w-full rounded-md border border-input bg-card px-2.5 text-xs sm:text-sm outline-hidden focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="member">Участник</option>
+                        <option value="admin">Администратор</option>
+                        <option value="guest">Гость</option>
+                      </select>
+
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={isInviting}
+                        className="h-9 text-xs px-3.5 bg-foreground text-background hover:bg-foreground/90 shrink-0 cursor-pointer"
+                      >
+                        {isInviting ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          "Пригласить"
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                </div>
 
-                {inviteError && (
-                  <p className="text-xs text-destructive font-medium tracking-tight">
-                    {inviteError}
-                  </p>
-                )}
+                  {inviteError && (
+                    <p className="text-xs text-destructive font-medium tracking-tight">
+                      {inviteError}
+                    </p>
+                  )}
 
-                {createdInvite && (
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                    Приглашение успешно отправлено
-                  </p>
-                )}
-              </form>
+                  {createdInvite && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                      Приглашение успешно отправлено
+                    </p>
+                  )}
+                </form>
+              )}
+
+              {/* Direct Add by User ID form */}
+              {addMemberMode === "direct" && (
+                <form
+                  onSubmit={handleDirectAddSubmit}
+                  className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3.5"
+                >
+                  <div className="text-xs sm:text-sm font-medium text-foreground flex items-center gap-1.5">
+                    <UserCheck className="size-4" />
+                    <span>Добавить существующего пользователя по ID</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="sm:col-span-2">
+                      <Input
+                        type="text"
+                        required
+                        placeholder="UUID пользователя (например, 7c9e6679-7425...)"
+                        value={directUserId}
+                        onChange={(e) => setDirectUserId(e.target.value)}
+                        disabled={isAddingMember}
+                        className="h-9 text-xs sm:text-sm bg-card font-mono"
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <select
+                        value={directRole}
+                        onChange={(e) => setDirectRole(e.target.value as WorkspaceRole)}
+                        disabled={isAddingMember}
+                        className="h-9 w-full rounded-md border border-input bg-card px-2.5 text-xs sm:text-sm outline-hidden focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="member">Участник</option>
+                        <option value="admin">Администратор</option>
+                        <option value="guest">Гость</option>
+                      </select>
+
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={isAddingMember}
+                        className="h-9 text-xs px-3.5 bg-foreground text-background hover:bg-foreground/90 shrink-0 cursor-pointer"
+                      >
+                        {isAddingMember ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          "Добавить"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {directError && (
+                    <p className="text-xs text-destructive font-medium tracking-tight">
+                      {directError}
+                    </p>
+                  )}
+
+                  {directSuccess && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                      Пользователь успешно добавлен в пространство!
+                    </p>
+                  )}
+                </form>
+              )}
 
               {/* Prominent Generated Invite Card */}
               {createdInvite && (
@@ -801,6 +1042,147 @@ export default function WorkspaceSettingsView({
           </div>
         </div>
       </div>
+
+      {/* Transfer Ownership Modal */}
+      <MacModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        title="Передача прав владельца"
+        subtitle={`Пространство /${workspace.slug}`}
+        tag="Владелец"
+        defaultWidth="max-w-md sm:max-w-lg"
+      >
+        <div className="p-6 space-y-5">
+          <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-600 dark:text-amber-400">
+            <AlertCircle className="size-4 mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <p className="font-semibold">Внимание: это действие необратимо</p>
+              <p className="text-muted-foreground leading-relaxed">
+                После передачи прав выбранный участник станет единственным владельцем пространства. Вы останетесь в пространстве в роли администратора.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="transfer-member" className="text-xs font-medium">
+              Выберите нового владельца из участников
+            </Label>
+            {members.filter((m) => m.user_id !== currentUser?.id).length === 0 ? (
+              <p className="text-xs text-muted-foreground p-3 border border-dashed border-border rounded-md text-center">
+                В пространстве пока нет других участников. Пригласите или добавьте коллегу перед передачей прав.
+              </p>
+            ) : (
+              <select
+                id="transfer-member"
+                value={selectedTransferUserId}
+                onChange={(e) => setSelectedTransferUserId(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-card px-3 text-xs sm:text-sm outline-hidden focus:ring-1 focus:ring-ring"
+              >
+                <option value="">-- Выберите участника --</option>
+                {members
+                  .filter((m) => m.user_id !== currentUser?.id)
+                  .map((m) => (
+                    <option key={m.user_id} value={m.user_id}>
+                      {m.user?.display_name || m.user?.email} ({m.user?.email}) — {m.role}
+                    </option>
+                  ))}
+              </select>
+            )}
+          </div>
+
+          {transferError && (
+            <p className="text-xs text-destructive font-medium">
+              {transferError}
+            </p>
+          )}
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsTransferModalOpen(false)}
+              disabled={isTransferring}
+              className="h-9 text-xs cursor-pointer"
+            >
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={isTransferring || !selectedTransferUserId}
+              onClick={handleTransferOwnership}
+              className="h-9 text-xs bg-foreground text-background hover:bg-foreground/90 cursor-pointer gap-1.5"
+            >
+              {isTransferring ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Передача...</span>
+                </>
+              ) : (
+                "Подтвердить передачу"
+              )}
+            </Button>
+          </div>
+        </div>
+      </MacModal>
+
+      {/* Leave Workspace Modal */}
+      <MacModal
+        isOpen={isLeaveModalOpen}
+        onClose={() => setIsLeaveModalOpen(false)}
+        title="Покинуть пространство"
+        subtitle={`Пространство /${workspace.slug}`}
+        tag="Выход"
+        defaultWidth="max-w-md"
+      >
+        <div className="p-6 space-y-5">
+          <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3.5 text-xs text-destructive">
+            <AlertCircle className="size-4 mt-0.5 shrink-0" />
+            <p className="leading-relaxed">
+              Вы уверены, что хотите выйти из пространства{" "}
+              <strong className="font-semibold text-foreground">{workspace.name}</strong>?
+              Вы потеряете доступ ко всем проектам, задачам и дискуссиям. Чтобы вернуться, потребуется новое приглашение от владельца или администратора.
+            </p>
+          </div>
+
+          {leaveError && (
+            <p className="text-xs text-destructive font-medium">
+              {leaveError}
+            </p>
+          )}
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsLeaveModalOpen(false)}
+              disabled={isLeaving}
+              className="h-9 text-xs cursor-pointer"
+            >
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={isLeaving}
+              onClick={handleLeaveWorkspace}
+              className="h-9 text-xs cursor-pointer gap-1.5"
+            >
+              {isLeaving ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Выход...</span>
+                </>
+              ) : (
+                "Да, покинуть"
+              )}
+            </Button>
+          </div>
+        </div>
+      </MacModal>
     </div>
   )
 }

@@ -31,6 +31,17 @@ export interface RemoveMemberRequest {
   userId: string
 }
 
+export interface AddMemberRequest {
+  workspaceSlug: string
+  userId: string
+  role?: WorkspaceRole
+}
+
+export interface TransferOwnershipRequest {
+  workspaceSlug: string
+  userId: string
+}
+
 export const workspaceApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getWorkspaces: builder.query<Workspace[], void>({
@@ -82,10 +93,46 @@ export const workspaceApi = baseApi.injectEndpoints({
       invalidatesTags: [{ type: "Workspace", id: "LIST" }],
     }),
 
+    leaveWorkspace: builder.mutation<void, string>({
+      query: (workspaceSlug) => ({
+        url: `/workspaces/${workspaceSlug}/leave`,
+        method: "POST",
+      }),
+      invalidatesTags: [
+        { type: "Workspace", id: "LIST" },
+        { type: "Workspace", id: "CURRENT" },
+      ],
+    }),
+
+    transferOwnership: builder.mutation<Workspace, TransferOwnershipRequest>({
+      query: ({ workspaceSlug, userId }) => ({
+        url: `/workspaces/${workspaceSlug}/transfer-ownership`,
+        method: "POST",
+        body: { user_id: userId },
+      }),
+      invalidatesTags: (_result, _error, { workspaceSlug }) => [
+        { type: "Workspace", id: workspaceSlug },
+        { type: "Workspace", id: "CURRENT" },
+        { type: "Workspace", id: "LIST" },
+        { type: "Workspace", id: `${workspaceSlug}_MEMBERS` },
+      ],
+    }),
+
     getWorkspaceMembers: builder.query<WorkspaceMember[], string>({
       query: (slug) => `/workspaces/${slug}/members`,
       providesTags: (_result, _error, slug) => [
         { type: "Workspace", id: `${slug}_MEMBERS` },
+      ],
+    }),
+
+    addWorkspaceMember: builder.mutation<WorkspaceMember, AddMemberRequest>({
+      query: ({ workspaceSlug, userId, role = "member" }) => ({
+        url: `/workspaces/${workspaceSlug}/members`,
+        method: "POST",
+        body: { user_id: userId, role },
+      }),
+      invalidatesTags: (_result, _error, { workspaceSlug }) => [
+        { type: "Workspace", id: `${workspaceSlug}_MEMBERS` },
       ],
     }),
 
@@ -129,7 +176,10 @@ export const {
   useCreateWorkspaceMutation,
   useUpdateWorkspaceMutation,
   useDeleteWorkspaceMutation,
+  useLeaveWorkspaceMutation,
+  useTransferOwnershipMutation,
   useGetWorkspaceMembersQuery,
+  useAddWorkspaceMemberMutation,
   useInviteWorkspaceMemberMutation,
   useUpdateWorkspaceMemberMutation,
   useRemoveWorkspaceMemberMutation,
