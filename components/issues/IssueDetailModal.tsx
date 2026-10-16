@@ -230,8 +230,8 @@ export function IssueDetailModal({
       defaultWidth="max-w-2xl sm:max-w-3xl"
       maximizedWidth="max-w-5xl"
     >
-      {/* Modal Internal Navigation Tabs */}
-      <div className="flex border-b border-border bg-muted/20 px-6 pt-2 gap-1 text-xs font-medium overflow-x-auto">
+      {/* Modal Internal Navigation Tabs - Sticky */}
+      <div className="sticky top-0 z-10 flex border-b border-border bg-card/95 backdrop-blur-xs px-6 pt-2 gap-1 text-xs font-medium overflow-x-auto shrink-0">
         <button
           type="button"
           onClick={() => setActiveTab("properties")}
@@ -540,7 +540,7 @@ export function IssueDetailModal({
               </div>
             )}
 
-            <div className="flex items-center justify-between gap-2.5 pt-3 border-t border-border">
+            <div className="sticky bottom-0 bg-card/95 backdrop-blur-xs flex items-center justify-between gap-2.5 pt-3 pb-1 border-t border-border mt-3">
               <Button
                 type="button"
                 variant="destructive"

@@ -335,7 +335,7 @@ export function CreateIssueModal({
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
+        <div className="sticky bottom-0 bg-card/95 backdrop-blur-xs flex items-center justify-end gap-2.5 pt-3 pb-1 border-t border-border mt-3">
           <Button
             type="button"
             variant="outline"

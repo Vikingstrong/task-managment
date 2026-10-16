@@ -21,6 +21,8 @@ export interface MacModalProps {
  * - Yellow dot (#ffbd2e): Closes with a distinct squeeze (compression) animation
  * - Green dot (#27c93f): Toggles expanded / maximized width
  * - Touch friendly: Larger size & visible glyphs on mobile/tablet screens for finger tap precision
+ * - Responsive scroll container: Automatically bounds height to viewport (dvh) so large modals
+ *   never exceed screen bounds, keep the titlebar pinned, and allow smooth internal vertical scrolling.
  */
 export function MacModal({
   isOpen,
@@ -39,6 +41,16 @@ export function MacModal({
   React.useEffect(() => {
     if (isOpen) {
       setCloseAnimation("none")
+    }
+  }, [isOpen])
+
+  // Prevent background body scroll while modal is active
+  React.useEffect(() => {
+    if (!isOpen) return
+    const originalOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = originalOverflow
     }
   }, [isOpen])
 
@@ -77,14 +89,14 @@ export function MacModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 sm:p-6 backdrop-blur-xs transition-opacity duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-3 sm:p-6 backdrop-blur-xs transition-opacity duration-200 overflow-y-auto"
       onClick={handleRedClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={`w-full ${
           isMaximized ? maximizedWidth : defaultWidth
-        } rounded-2xl border border-border bg-card shadow-2xl overflow-hidden transition-all duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        } max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden transition-all duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           closeAnimation === "red"
             ? "scale-95 opacity-0 blur-sm duration-180"
             : closeAnimation === "yellow"
@@ -94,8 +106,8 @@ export function MacModal({
         role="dialog"
         aria-modal="true"
       >
-        {/* macOS Window Titlebar */}
-        <div className="flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3.5 select-none">
+        {/* macOS Window Titlebar (pinned at the top) */}
+        <div className="shrink-0 flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3.5 select-none">
           <div className="flex items-center gap-3.5 min-w-0">
             {/* Traffic Lights - Larger and touch-friendly on mobile/tablet */}
             <div className="group/traffic flex items-center gap-2.5 sm:gap-2 shrink-0">
@@ -168,8 +180,10 @@ export function MacModal({
           </button>
         </div>
 
-        {/* Modal Content */}
-        {children}
+        {/* Modal Scrollable Body */}
+        <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
+          {children}
+        </div>
       </div>
     </div>
   )
